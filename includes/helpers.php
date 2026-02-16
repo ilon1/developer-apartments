@@ -1,4 +1,3 @@
-
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 function dev_get_field( $post_id, $key ) {

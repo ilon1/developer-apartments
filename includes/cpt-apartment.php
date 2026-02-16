@@ -1,4 +1,3 @@
-
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 function dev_apt_register_cpt() {

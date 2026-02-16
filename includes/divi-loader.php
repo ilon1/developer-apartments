@@ -1,4 +1,3 @@
-
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 add_action('et_builder_ready', 'dev_register_divi_modules');

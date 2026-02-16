@@ -1,4 +1,3 @@
-
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 add_shortcode('dev_apartments_table', function(){
