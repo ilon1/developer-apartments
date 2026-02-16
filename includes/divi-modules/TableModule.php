@@ -1,4 +1,3 @@
-
 <?php
 class DEV_Table_Module extends ET_Builder_Module {
     public $slug       = 'dev_apartment_table';

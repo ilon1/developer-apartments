@@ -1,4 +1,3 @@
-
 jQuery(function($){
   if(typeof DevAptAdmin==='undefined') return;
   var term = new URLSearchParams(location.search).get('term_id');
