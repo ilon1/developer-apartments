@@ -1,4 +1,3 @@
-
 <?php
 class DEV_Map_Module extends ET_Builder_Module {
     public $slug       = 'dev_interactive_map';

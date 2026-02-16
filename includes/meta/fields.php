@@ -1,4 +1,3 @@
-
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 add_action( 'add_meta_boxes', function(){

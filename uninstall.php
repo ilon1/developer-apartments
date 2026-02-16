@@ -1,4 +1,3 @@
-
 <?php
 if ( ! defined('WP_UNINSTALL_PLUGIN') ) exit;
 $posts = get_posts(['post_type'=>'apartment','numberposts'=>-1,'post_status'=>'any','fields'=>'ids']);

@@ -1,4 +1,3 @@
-
 <?php
 if ( ! defined('ABSPATH') ) exit;
 // Admin page is already registered; we only update renderer markup to add path import help
