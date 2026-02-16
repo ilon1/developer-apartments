@@ -1,0 +1,5 @@
+
+.dev-term-map-wrap .dev-field{margin:8px 0}
+.dev-term-map-wrap input[type="color"]{width:60px;height:34px;padding:0}
+#dev_svg polygon{cursor:pointer}
+#dev_svg circle.dev-handle{cursor:move}
