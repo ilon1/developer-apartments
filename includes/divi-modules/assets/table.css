@@ -1,0 +1,7 @@
+.dev-apartment-table-wrapper .dev-table thead th[data-sortable="1"]{position:relative;padding-right:18px}
+.dev-apartment-table-wrapper .dev-table thead th .sort-ico{position:absolute;right:6px;top:50%;transform:translateY(-50%);opacity:.45;font-size:11px}
+.dev-apartment-table-wrapper .dev-table thead th[data-dir="asc"]  .sort-ico:after{content:"↑"}
+.dev-apartment-table-wrapper .dev-table thead th[data-dir="desc"] .sort-ico:after{content:"↓"}
+.dev-apartment-table-wrapper .dev-filters select,
+.dev-apartment-table-wrapper .dev-filters input{border:1px solid #ddd;padding:6px 8px;border-radius:4px}
+.dev-apartment-table-wrapper .dev-filters button.f-csv{padding:6px 10px;border:1px solid #ccc;background:#fff;border-radius:4px;cursor:pointer}

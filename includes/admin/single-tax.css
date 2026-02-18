@@ -1,0 +1,4 @@
+.dev-ajax-tax-box{position:relative}
+.dev-ajax-tax-results{position:absolute;left:0;right:0;z-index:10;background:#fff;border:1px solid #ccd0d4;max-height:220px;overflow:auto}
+.dev-ajax-tax-item{padding:6px 8px;cursor:pointer}
+.dev-ajax-tax-item:hover{background:#f0f0f0}

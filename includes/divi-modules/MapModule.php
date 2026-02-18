@@ -2,10 +2,12 @@
 class DEV_Map_Module extends ET_Builder_Module {
     public $slug       = 'dev_interactive_map';
     public $vb_support = 'on';
+
     public function init() {
         $this->name = 'Interaktívna Mapa + Tooltipy';
         $this->main_css_element = '%%order_class%%';
     }
+
     public function get_fields() {
         $terms   = get_terms([ 'taxonomy' => 'project_structure', 'hide_empty' => false ]);
         $options = [];
@@ -18,7 +20,7 @@ class DEV_Map_Module extends ET_Builder_Module {
                 'type'        => 'select',
                 'options'     => $options,
                 'toggle_slug' => 'main_content',
-                'description' => 'Vyberte, ktorú mapu chcete zobraziť.',
+                'description' => 'Primárny zdroj mapy. Ak nie je zadaný, použije sa fallback (term_id/term_slug z URL alebo prvý term s obrázkom).',
             ],
             'tt_position' => [
                 'label'       => 'Pozícia Tooltipu',
@@ -41,17 +43,94 @@ class DEV_Map_Module extends ET_Builder_Module {
     public function get_advanced_fields_config(){
         return [ 'toggles' => [ 'advanced' => [ 'tooltip_style' => 'Štýl Tooltipu', 'count_style' => 'Štýl Počítadla' ] ], 'text' => false, 'fonts' => false ];
     }
+
+    /**
+     * Smart fallback na ID termu so zohľadnením:
+     * - URL ?term_id=123 (ak existuje)
+     * - URL ?term_slug=slug (ak existuje)
+     * - ak je zadaný $prefer_id a nemá obrázok → prvé dieťa s obrázkom
+     * - globálne: najprv top-level term s obrázkom, potom akýkoľvek s obrázkom, potom akýkoľvek term
+     */
+    private function dev_find_fallback_term_id( $prefer_id = 0 ){
+        // 0) ?term_id=
+        if ( isset($_GET['term_id']) ){
+            $tid = intval($_GET['term_id']);
+            if ( $tid > 0 ){
+                $t = get_term( $tid, 'project_structure' );
+                if ( $t && ! is_wp_error($t) ) return $tid;
+            }
+        }
+        // 1) ?term_slug=
+        if ( isset($_GET['term_slug']) && $_GET['term_slug'] !== '' ){
+            $by_slug = get_term_by('slug', sanitize_title($_GET['term_slug']), 'project_structure');
+            if ( $by_slug && ! is_wp_error($by_slug) ) return intval($by_slug->term_id);
+        }
+        // 2) preferovaný parent → ak nemá obrázok, hľadaj dieťa s obrázkom
+        if ( $prefer_id ){
+            $img = get_term_meta( $prefer_id, 'dev_floor_plan_id', true );
+            if ( ! $img ){
+                $child_with_img = get_terms([
+                    'taxonomy'   => 'project_structure',
+                    'hide_empty' => false,
+                    'parent'     => $prefer_id,
+                    'number'     => 1,
+                    'meta_query' => [ [ 'key' => 'dev_floor_plan_id', 'compare' => 'EXISTS' ] ],
+                ]);
+                if ( ! is_wp_error($child_with_img) && ! empty($child_with_img) ) return intval($child_with_img[0]->term_id);
+            }
+            return $prefer_id; // nechaj pôvodný, ak sme nenašli lepší
+        }
+        // 3) globálne fallbacky
+        // 3a) top-level s obrázkom
+        $top_with_img = get_terms([
+            'taxonomy'   => 'project_structure',
+            'hide_empty' => false,
+            'parent'     => 0,
+            'number'     => 1,
+            'meta_query' => [ [ 'key' => 'dev_floor_plan_id', 'compare' => 'EXISTS' ] ],
+        ]);
+        if ( ! is_wp_error($top_with_img) && ! empty($top_with_img) ) return intval($top_with_img[0]->term_id);
+        // 3b) hociktorý s obrázkom
+        $with_img = get_terms([
+            'taxonomy'   => 'project_structure',
+            'hide_empty' => false,
+            'number'     => 1,
+            'meta_query' => [ [ 'key' => 'dev_floor_plan_id', 'compare' => 'EXISTS' ] ],
+        ]);
+        if ( ! is_wp_error($with_img) && ! empty($with_img) ) return intval($with_img[0]->term_id);
+        // 3c) hociktorý term
+        $any = get_terms([ 'taxonomy'=>'project_structure', 'hide_empty'=>false, 'number'=>1 ]);
+        if ( ! is_wp_error($any) && ! empty($any) ) return intval($any[0]->term_id);
+        return 0;
+    }
+
     public function render( $attrs, $content = null, $render_slug ){
-        $project_id_attr = isset($this->props['project_id']) ? $this->props['project_id'] : '';
-        $current_id = isset($_GET['map_id']) ? intval($_GET['map_id']) : intval($project_id_attr);
-        if ( ! $current_id ) return $this->_render_module_wrapper('<div class="et_pb_module_inner">Vyberte projekt v nastaveniach modulu.</div>', $render_slug);
+        // Preferencie ID: URL ?map_id > modulové pole > fallback
+        $project_id_attr = isset($this->props['project_id']) ? intval($this->props['project_id']) : 0;
+        $current_id = isset($_GET['map_id']) ? intval($_GET['map_id']) : $project_id_attr;
+
+        // Aplikuj smart fallback (zohľadní term_id/term_slug a deti s obrázkom)
+        $current_id = $this->dev_find_fallback_term_id( $current_id );
+
+        if ( ! $current_id ) {
+            return $this->_render_module_wrapper('<div class="et_pb_module_inner">Vyberte projekt v nastaveniach modulu.</div>', $render_slug);
+        }
+
         $term = get_term( $current_id );
         if ( ! $term || is_wp_error( $term ) ) return $this->_render_module_wrapper('<div class="et_pb_module_inner">Zvolená kategória/mapa neexistuje.</div>', $render_slug);
+
         $image_id = get_term_meta( $current_id, 'dev_floor_plan_id', true );
+        // ak náhodou stále chýba obrázok, ešte posledný pokus: dieťa s obrázkom
+        if ( ! $image_id ){
+            $current_id = $this->dev_find_fallback_term_id( $current_id );
+            $image_id   = get_term_meta( $current_id, 'dev_floor_plan_id', true );
+        }
         $image_url = $image_id ? wp_get_attachment_url( $image_id ) : '';
+
         $map_data_raw = get_term_meta( $current_id, 'dev_map_data', true );
         $shapes = $map_data_raw ? json_decode( $map_data_raw ) : [];
         if ( ! $image_url ) return $this->_render_module_wrapper('<div class="et_pb_module_inner">Táto kategória nemá nastavený obrázok mapy.</div>', $render_slug);
+
         $free_status_slug = 'volny';
         if ( is_array($shapes) ){
             foreach ( $shapes as &$shape ){
