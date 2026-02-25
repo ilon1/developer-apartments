@@ -1,0 +1,6 @@
+.dev-hide-original-reload{display:none !important}
+.dev-target-wrap{display:grid;grid-template-columns:1fr;gap:6px;margin-top:6px}
+.dev-target-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dev-radio{display:inline-flex;gap:6px;align-items:center}
+#dev_target_select{min-width:320px}
+#dev_target_search{min-width:240px}

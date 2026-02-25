@@ -1,0 +1,14 @@
+
+/* Sticky filter bar for TableModuleV2 */
+.dev-apartment-table-wrapper .dev-filters{
+  position: sticky;
+  top: var(--dev-sticky-top, 0);
+  z-index: 9;
+  background: inherit;
+  backdrop-filter: saturate(180%) blur(2px);
+  border-bottom: 1px solid rgba(0,0,0,.06);
+}
+/* Breadcrumbs body style */
+.dev-breadcrumbs{font-size:14px; color: var(--et-body-text, #666)}
+.dev-breadcrumbs a{color: inherit; text-decoration:none}
+.dev-breadcrumbs a:hover{text-decoration:underline}

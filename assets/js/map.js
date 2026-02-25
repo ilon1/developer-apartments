@@ -1,91 +1,103 @@
 (function(){
-  function initMap(wrap){
-    if(!wrap || wrap.__devMapInit) return; wrap.__devMapInit = true;
-    var payload = wrap.dataset.payload ? JSON.parse(wrap.dataset.payload) : null;
-    var imgUrl  = wrap.dataset.img || '';
-    if(!payload) return;
+  function escHtml(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]);});}
+  function toPointsAttr(points){return points.map(function(p){return p[0]+","+p[1];}).join(' ');}  
+  function toArrayPoints(raw){return (raw||[]).map(function(p){return Array.isArray(p)?p:[p.x,p.y];});}
+  // Screen coordinates using element's own matrix
+  function polyCenterScreen(poly){
+    try{
+      var svg = poly.ownerSVGElement; if(!svg) return null; var bb = poly.getBBox();
+      var pt = svg.createSVGPoint? svg.createSVGPoint(): null; if(!pt) return null;
+      pt.x = bb.x + bb.width/2; pt.y = bb.y + bb.height/2;
+      var m = poly.getScreenCTM? poly.getScreenCTM() : (svg.getScreenCTM? svg.getScreenCTM() : null);
+      if(!m) return null; var r = pt.matrixTransform(m); return {x:r.x, y:r.y};
+    }catch(e){ return null; }
+  }
+  function svgToClient(svg,x,y){
+    try{ if(svg && svg.getScreenCTM){ var pt=svg.createSVGPoint? svg.createSVGPoint():null; if(pt){ pt.x=x; pt.y=y; var m=svg.getScreenCTM(); if(m && m.a){ var r=pt.matrixTransform(m); return {x:r.x,y:r.y}; } } } }catch(e){}
+    var vb=svg.viewBox.baseVal, rect=svg.getBoundingClientRect();
+    var sx=rect.width /(vb && vb.width ? vb.width  : rect.width);
+    var sy=rect.height/(vb && vb.height? vb.height : rect.height);
+    var scale=Math.min(sx,sy), padX=(rect.width-(vb.width*scale))*0.5, padY=(rect.height-(vb.height*scale))*0.5;
+    return {x:rect.left+padX+x*scale, y:rect.top+padY+y*scale};
+  }
+  function centroid(points){var area=0,x=0,y=0,n=points.length; if(!n){return [0,0];}
+    for(var i=0;i<n;i++){var j=(i+1)%n;var a=points[i][0]*points[j][1]-points[j][0]*points[i][1];area+=a;x+=(points[i][0]+points[j][0])*a;y+=(points[i][1]+points[j][1])*a;}
+    if(Math.abs(area)<1e-6){var minx=Infinity,maxx=-Infinity,miny=Infinity,maxy=-Infinity;points.forEach(function(p){if(p[0]<minx)minx=p[0];if(p[0]>maxx)maxx=p[0];if(p[1]<miny)miny=p[1];if(p[1]>maxy)maxy=p[1];});return[(minx+maxx)/2,(miny+maxy)/2];}
+    return [x/(6*area), y/(6*area)];
+  }
+  function occTextSK(n){ if(!(n>0)) return 'Nedostupné'; if(n===1) return 'Voľný 1 byt'; if(n>=2 && n<=4) return 'Voľné '+n+' byty'; return 'Voľných '+n+' bytov'; }
+  function buildTooltipHTML(title, free, vars){
+    var badge = '<div class="dev-tt-badge" style="background:'+(free>0?vars.availBg:vars.unavailBg)+';color:'+(free>0?vars.availColor:vars.unavailColor)+';text-align:center">'+occTextSK(free)+'</div>';
+    return '<div class="dev-map-tooltip" style="text-align:center">'
+         + (title? '<div class="dev-tt-title">'+escHtml(title)+'</div>' : '')
+         + badge
+         + '</div>';
+  }
+  function placeAtPoint(tipWrap, wrap, screenPt, offset){
+    var wrapRect = wrap.getBoundingClientRect(); var node = tipWrap.firstElementChild; if(!node) return;
+    var off = (typeof offset==='number' && !isNaN(offset)) ? offset : 12;
+    var cs = getComputedStyle(wrap); var padL = parseFloat(cs.paddingLeft)||0, padT = parseFloat(cs.paddingTop)||0;
+    // left/top inside content box
+    var left = screenPt.x - wrapRect.left - padL - node.offsetWidth/2;
+    var top  = screenPt.y - wrapRect.top  - padT - node.offsetHeight - off;
+    if(left<6) left=6; var maxW = wrap.clientWidth; if(left+node.offsetWidth>maxW-6) left = maxW - node.offsetWidth - 6;
+    if(top<6) top = screenPt.y - wrapRect.top - padT + off;
+    tipWrap.style.left = Math.round(left)+'px'; tipWrap.style.top  = Math.round(top)+'px';
+  }
 
-    wrap.style.position='relative';
+  function initMap(wrap){ if(!wrap || wrap.__devMapInit) return; wrap.__devMapInit=true;
+    var payload=null; try{ payload = wrap.dataset.payload ? JSON.parse(wrap.dataset.payload) : null; }catch(e){ console.warn('DevApt map: invalid payload'); }
+    var imgUrl = wrap.dataset.img || ''; if(!payload){ return; }
+    wrap.style.position='relative'; wrap.style.width='100%';
+    var cssVars = getComputedStyle(wrap); var vars = {
+      availBg:(cssVars.getPropertyValue('--dev-available-bg').trim()||'#2e7d32'), availColor:(cssVars.getPropertyValue('--dev-available-color').trim()||'#fff'),
+      unavailBg:(cssVars.getPropertyValue('--dev-unavailable-bg').trim()||'#c62828'), unavailColor:(cssVars.getPropertyValue('--dev-unavailable-color').trim()||'#fff'),
+      hoverFill:(cssVars.getPropertyValue('--dev-hover-fill').trim()||''), hoverOpacity:parseFloat(cssVars.getPropertyValue('--dev-hover-opacity'))||0.5,
+      strokeMode:(cssVars.getPropertyValue('--dev-stroke-mode').trim()||'same'), tipBg:(cssVars.getPropertyValue('--dev-tooltip-bg').trim()||'#222'), tipColor:(cssVars.getPropertyValue('--dev-tooltip-color').trim()||'#fff'), tipPad:(cssVars.getPropertyValue('--dev-tooltip-pad').trim()||'8px'), tipSize:(cssVars.getPropertyValue('--dev-tooltip-size').trim()||'14px'), tipOffset:parseInt(cssVars.getPropertyValue('--dev-tooltip-offset'))||12 };
 
-    // background image
-    var bg=null;
-    if(imgUrl){
-      bg = new Image(); bg.src = imgUrl;
-      bg.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;z-index:0';
-      wrap.appendChild(bg);
-    }
-
-    var svgNS='http://www.w3.org/2000/svg';
-    var svg=document.createElementNS(svgNS,'svg');
-    svg.setAttribute('width','100%'); svg.setAttribute('height','100%');
-    svg.style.display='block'; svg.style.position='relative'; svg.style.zIndex='1';
-    wrap.appendChild(svg);
-
+    var bg=null; if(imgUrl){ bg = new Image(); bg.src = imgUrl; bg.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;z-index:0;user-select:none;pointer-events:none;'; wrap.appendChild(bg); }
+    var svgNS='http://www.w3.org/2000/svg'; var svg=document.createElementNS(svgNS,'svg'); svg.setAttribute('width','100%'); svg.setAttribute('height','100%'); svg.setAttribute('preserveAspectRatio','xMidYMid meet'); svg.style.display='block'; svg.style.position='relative'; svg.style.zIndex='1'; wrap.appendChild(svg);
     function setViewBox(){ if(bg && bg.naturalWidth && bg.naturalHeight){ svg.setAttribute('viewBox','0 0 '+bg.naturalWidth+' '+bg.naturalHeight); } }
     if(bg){ if(bg.complete){ setViewBox(); } else { bg.onload=setViewBox; } }
 
-    var tip=document.createElement('div'); tip.style.position='absolute'; tip.style.pointerEvents='none'; tip.style.zIndex='5'; wrap.appendChild(tip);
-
-    function styleTooltipNode(node){
-      var cs = getComputedStyle(wrap);
-      node.style.background   = cs.getPropertyValue('--dev-tooltip-bg')   || '#222';
-      node.style.color        = cs.getPropertyValue('--dev-tooltip-color')|| '#fff';
-      node.style.padding      = cs.getPropertyValue('--dev-tooltip-pad')  || '8px';
-      var fs = cs.getPropertyValue('--dev-tooltip-size') || '14px'; node.style.fontSize = fs.toString().trim();
-      node.style.borderRadius = '6px'; node.style.boxShadow='0 2px 8px rgba(0,0,0,.15)';
-    }
-
-    // Auto-position tooltip INSIDE the visible SVG box (no overflow)
-    function placeTooltip(node, x, y){
-      var svgRect = svg.getBoundingClientRect();
-      // preferred to the bottom-right of cursor
-      var left = x + 12; var top = y + 12;
-      // if overflowing to right -> place left
-      if(left + node.offsetWidth > svgRect.width) left = x - node.offsetWidth - 12;
-      // if overflowing to bottom -> place above
-      if(top + node.offsetHeight > svgRect.height) top = y - node.offsetHeight - 12;
-      // clamp to svg box
-      if(left < 0) left = 6; if(top < 0) top = 6;
-      node.style.left = left + 'px'; node.style.top = top + 'px';
-    }
-
-    function showTooltip(html, x, y){
-      tip.innerHTML = '<div class="dev-map-tooltip">'+html+'</div>';
-      var node = tip.firstChild; if(!node) return;
-      styleTooltipNode(node); placeTooltip(node, x, y);
+    var tip=document.createElement('div'); tip.className='dev-tooltip-layer'; tip.style.cssText='position:absolute;left:0;top:0;z-index:5;pointer-events:none;'; wrap.appendChild(tip);
+    function showTooltipAt(poly, points, html){
+      tip.innerHTML = html; var node = tip.firstElementChild; if(!node) return;
+      node.style.background = vars.tipBg; node.style.color=vars.tipColor; node.style.padding=vars.tipPad; node.style.fontSize=vars.tipSize; node.style.borderRadius='6px'; node.style.boxShadow='0 2px 8px rgba(0,0,0,.15)'; node.style.minWidth='110px'; node.style.display='inline-block'; node.style.textAlign='center';
+      // compute screen center using bbox center; fallback to centroid
+      var screen = polyCenterScreen(poly);
+      if(!screen){
+        var c = (function(){ var arr=(points||[]); if(arr.length<3) return [0,0]; var a=0,x=0,y=0; for(var i=0;i<arr.length;i++){var j=(i+1)%arr.length; var aa=arr[i][0]*arr[j][1]-arr[j][0]*arr[i][1]; a+=aa; x+=(arr[i][0]+arr[j][0])*aa; y+=(arr[i][1]+arr[j][1])*aa;} if(Math.abs(a)<1e-6){ var minx=Infinity,maxx=-Infinity,miny=Infinity,maxy=-Infinity; arr.forEach(function(p){ if(p[0]<minx)minx=p[0]; if(p[0]>maxx)maxx=p[0]; if(p[1]<miny)miny=p[1]; if(p[1]>maxy)maxy=p[1];}); return [(minx+maxx)/2,(miny+maxy)/2]; } return [x/(6*a), y/(6*a)]; })();
+        screen = svgToClient(svg, c[0], c[1]);
+      }
+      // wait a frame so fonts/layout settle, then position
+      requestAnimationFrame(function(){ placeAtPoint(tip, wrap, screen, vars.tipOffset); });
     }
     function hideTooltip(){ tip.innerHTML=''; }
 
-    function shapeColor(s){ if(payload.colorMode==='override') return payload.color; return s.color || '#e91e63'; }
+    var polys=[];
+    function shapeFill(s){ return (payload.colorMode==='override') ? (payload.color||'#1e88e5') : (s.color||'#1e88e5'); }
 
-    // Reverted layout: title + count, like original implementation
-    function makeTooltipHtml(s){
-      var title = s.custom_title || s.display_label || '';
-      var html  = '<span class="dev-tt-title">'+ title +'</span>';
-      if(s.free_count !== undefined){
-        var free = parseInt(s.free_count, 10);
-        var text = (free > 0) ? (free + ' voľných') : 'Obsadený';
-        html += '<span class="dev-tt-count">'+ text +'</span>';
+    (payload.shapes||[]).forEach(function(s){ if(!s.points || !s.points.length) return; var pts = toArrayPoints(s.points); var poly=document.createElementNS(svgNS,'polygon'); poly.setAttribute('points', toPointsAttr(pts)); var fill = shapeFill(s); poly.setAttribute('fill', fill); poly.setAttribute('fill-opacity','0.35'); if(vars.strokeMode==='none'){ poly.setAttribute('stroke','none'); } else { poly.setAttribute('stroke', fill); poly.setAttribute('stroke-opacity','0.95'); } poly.setAttribute('stroke-width','1'); poly.style.cursor='pointer';
+      var titleTxt = (s.tooltip && String(s.tooltip).trim()) ? s.tooltip : (s.custom_title || s.display_label || ''); var free = (typeof s.free_count==='number') ? s.free_count : undefined; poly.setAttribute('tabindex','0'); poly.setAttribute('role','button'); poly.setAttribute('aria-label', titleTxt); svg.appendChild(poly); polys.push({el:poly, pts:pts, data:s});
+      function enter(){ var html = '<div class="dev-map-tooltip" style="text-align:center">'+ (titleTxt? '<div class="dev-tt-title">'+escHtml(titleTxt)+'</div>' : '') + '<div class="dev-tt-badge" style="background:'+(free>0?vars.availBg:vars.unavailBg)+';color:'+(free>0?vars.availColor:vars.unavailColor)+';text-align:center">'+ (free>0? (free===1? 'Voľný 1 byt' : (free<=4? ('Voľné '+free+' byty') : ('Voľných '+free+' bytov'))) : 'Nedostupné') +'</div></div>';
+        showTooltipAt(poly, pts, html);
+        var hov = vars.hoverFill || s.hover || ''; if(hov){ poly.__oldFill = poly.getAttribute('fill'); poly.__oldOp = poly.getAttribute('fill-opacity'); poly.setAttribute('fill', hov); poly.setAttribute('fill-opacity', String(vars.hoverOpacity)); if(vars.strokeMode!=='none'){ poly.setAttribute('stroke', hov); } }
+        poly.classList.add('dev-map-highlight'); if(s.target_type==='term' && s.target_id){ window.dispatchEvent(new CustomEvent('devTermHover', { detail: { terms: [String(s.target_id)] } })); }
       }
-      return html;
-    }
-
-    function toPoints(points){ return points.map(function(p){return p[0]+','+p[1];}).join(' '); }
-
-    (payload.shapes||[]).forEach(function(s){
-      if(!s.points || !s.points.length) return;
-      var poly=document.createElementNS(svgNS,'polygon');
-      poly.setAttribute('points', toPoints(s.points));
-      poly.setAttribute('fill', shapeColor(s)); poly.setAttribute('fill-opacity','0.35');
-      poly.setAttribute('stroke','#fff'); poly.setAttribute('stroke-width','1');
-      poly.style.cursor='pointer'; svg.appendChild(poly);
-
-      poly.addEventListener('mousemove', function(e){ var r=svg.getBoundingClientRect(); showTooltip(makeTooltipHtml(s), e.clientX-r.left, e.clientY-r.top); });
-      poly.addEventListener('mouseleave', hideTooltip);
-      poly.addEventListener('click', function(){ if(payload.action==='navigate' && s.link){ window.location.href = s.link; } else { window.dispatchEvent(new CustomEvent('devTermSelect', { detail: { termId: s.target_id || null } })); } });
+      function move(){ if(!tip.firstElementChild) return; var sc = polyCenterScreen(poly); if(sc) placeAtPoint(tip, wrap, sc, vars.tipOffset); }
+      function leave(){ hideTooltip(); if(poly.__oldFill){ poly.setAttribute('fill', poly.__oldFill); poly.setAttribute('fill-opacity', poly.__oldOp || '0.35'); if(vars.strokeMode!=='none'){ poly.setAttribute('stroke', poly.__oldFill); } } poly.classList.remove('dev-map-highlight'); window.dispatchEvent(new CustomEvent('devTermHover', { detail: { terms: [] } })); }
+      poly.addEventListener('mouseenter', enter); poly.addEventListener('mousemove', move); poly.addEventListener('mouseleave', leave); poly.addEventListener('focus', enter); poly.addEventListener('blur', leave);
+      poly.addEventListener('click', function(){ if(s.target_type==='post' && s.link){ window.location.href = s.link; return; } if(payload.action==='navigate' && s.link){ window.location.href = s.link; } else { window.dispatchEvent(new CustomEvent('devTermSelect', { detail: { termId: s.target_id || null } })); } });
     });
-  }
 
+    window.addEventListener('resize', function(){ if(!tip.firstElementChild) return; // reposition on resize with last hovered poly if available
+      // naive: trigger move on all to recompute quickly (tooltip will clamp anyway)
+      polys.forEach(function(p){ /* no-op; would need state of last active poly */ });
+    });
+
+    window.addEventListener('devTermHover', function(e){ var terms = (e.detail && e.detail.terms) || []; polys.forEach(function(p){ var t=(p.data && p.data.target_type==='term')? String(p.data.target_id||''):''; var on = t && terms.indexOf(String(t))>=0; if(on){ p.el.classList.add('dev-map-highlight'); if(vars.strokeMode!=='none'){ p.el.setAttribute('stroke-width','2'); } } else { p.el.classList.remove('dev-map-highlight'); if(vars.strokeMode!=='none'){ p.el.setAttribute('stroke-width','1'); } } }); });
+  }
   function scan(){ document.querySelectorAll('.dev-apt-map[data-payload]').forEach(initMap); }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', scan); } else { scan(); }
 })();

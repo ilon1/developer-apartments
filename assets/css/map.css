@@ -1,4 +1,10 @@
-/* Tooltip layout enforcement */
-.dev-map-tooltip{display:inline-block;line-height:1.2;}
-.dev-tt-title{display:block;font-weight:bold;margin-bottom:4px;}
-.dev-tt-count{display:inline-block;padding:2px 6px;border-radius:4px;margin-top:4px;}
+.dev-map-tooltip{display:inline-block;line-height:1.25;text-align:center}
+.dev-tt-title{font-weight:600;margin-bottom:6px;text-align:center}
+.dev-tt-badge{display:inline-block;padding:4px 8px;border-radius:14px;font-weight:600;text-align:center}
+.dev-zoom-layer{will-change:transform}
+:root{--dev-hover-fill:#26a69a}
+/* Remove mobile tap highlight / focus outline on polygons */
+.dev-apt-map svg polygon{outline:none;-webkit-tap-highlight-color:transparent}
+.dev-apt-map svg polygon:focus{outline:none}
+/* Glow on hover/highlight */
+.dev-apt-map svg polygon.dev-map-highlight{filter:drop-shadow(0 0 10px rgba(38,166,154,.55))}
