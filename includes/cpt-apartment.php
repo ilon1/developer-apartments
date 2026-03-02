@@ -19,7 +19,7 @@ function dev_apt_register_cpt() {
         'menu_icon'          => 'dashicons-building',
         'supports'           => [ 'title', 'editor', 'thumbnail' ],
         'show_in_rest'       => true,
-        'exclude_from_search'=> true,
+        'exclude_from_search'=> false, // byty sú vo vyhľadávaní aj v Bit Form dropdownoch
         'map_meta_cap'       => true,
         'show_in_menu'       => true,
         'menu_position'      => 20,
