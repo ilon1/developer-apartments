@@ -1,0 +1,90 @@
+/**
+ * Bitform – štýly v súlade s Divi témou
+ * Preberá font, farbu textu a akcent z nastavení Divi.
+ *
+ * IMPORT:
+ * 1. Divi Theme Options: Divi → Theme Options → General → Custom CSS (vlož obsah tohto súboru)
+ * 2. Alebo Child téma: skopíruj do style.css alebo samostatného .css a enqueue
+ * 3. Alebo modul Kód: vlož <style>...</style> do modulu Kód na stránke
+ */
+
+/* Premenné – ak chcete zmeniť akcent, upravte tu alebo v Divi Custom CSS nad touto sekciou */
+.dev-apt-contact-content {
+  --bitform-accent: #9C9B7F; /* fallback – zhodné s Divi akcentom (Rezidencia Pršianska) */
+  --bitform-border-color: rgba(0, 0, 0, 0.15);
+  --bitform-focus-color: #9C9B7F;
+}
+
+/* Bitform – dedenie písma a farieb z Divi body (Theme Customizer → Typography) */
+.dev-apt-contact-content .bit-form,
+.dev-apt-contact-content .bitform-form,
+.dev-apt-contact-content [class*="bit-form"],
+.dev-apt-contact-content [id^="bit_form"] {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Labels */
+.dev-apt-contact-content .bit-form label,
+.dev-apt-contact-content .bitform-form label,
+.dev-apt-contact-content [class*="bit-form"] label {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+}
+
+/* Inputy, select, textarea */
+.dev-apt-contact-content .bit-form input,
+.dev-apt-contact-content .bit-form select,
+.dev-apt-contact-content .bit-form textarea,
+.dev-apt-contact-content .bitform-form input,
+.dev-apt-contact-content .bitform-form select,
+.dev-apt-contact-content .bitform-form textarea,
+.dev-apt-contact-content [class*="bit-form"] input,
+.dev-apt-contact-content [class*="bit-form"] select,
+.dev-apt-contact-content [class*="bit-form"] textarea {
+  font-family: inherit !important;
+  font-size: inherit !important;
+  color: inherit !important;
+  border-color: var(--bitform-border-color);
+}
+
+.dev-apt-contact-content .bit-form input:focus,
+.dev-apt-contact-content .bit-form select:focus,
+.dev-apt-contact-content .bit-form textarea:focus,
+.dev-apt-contact-content .bitform-form input:focus,
+.dev-apt-contact-content .bitform-form select:focus,
+.dev-apt-contact-content .bitform-form textarea:focus {
+  border-color: var(--bitform-focus-color);
+  outline-color: var(--bitform-focus-color);
+}
+
+/* Odkazy v rámci formulára – akcent (rovnaký ako linky v Divi) */
+.dev-apt-contact-content .bit-form a,
+.dev-apt-contact-content .bitform-form a,
+.dev-apt-contact-content [class*="bit-form"] a {
+  color: var(--bitform-accent);
+}
+
+/* Tlačidlá – akcent Divi */
+.dev-apt-contact-content .bit-form button[type="submit"],
+.dev-apt-contact-content .bit-form input[type="submit"],
+.dev-apt-contact-content .bitform-form button[type="submit"],
+.dev-apt-contact-content .bitform-form input[type="submit"],
+.dev-apt-contact-content [class*="bit-form"] button[type="submit"],
+.dev-apt-contact-content [class*="bit-form"] input[type="submit"] {
+  background-color: var(--bitform-accent) !important;
+  color: #fff !important;
+  border-color: var(--bitform-accent);
+  font-family: inherit !important;
+  font-size: inherit !important;
+}
+
+.dev-apt-contact-content .bit-form button[type="submit"]:hover,
+.dev-apt-contact-content .bit-form input[type="submit"]:hover,
+.dev-apt-contact-content .bitform-form button[type="submit"]:hover,
+.dev-apt-contact-content .bitform-form input[type="submit"]:hover {
+  opacity: 0.9;
+}

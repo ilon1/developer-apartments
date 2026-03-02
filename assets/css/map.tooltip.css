@@ -1,0 +1,4 @@
+.devapt-tooltip{font:14px/1.25 system-ui,Segoe UI,Roboto,Arial,sans-serif}
+.devapt-tip-title{font-weight:600;text-align:center}
+.devapt-tip-free{margin-top:3px;text-align:center}
+:root{--devapt-free-color:#2e7d32;--devapt-busy-color:#c62828;--devapt-tip-text:#fff}

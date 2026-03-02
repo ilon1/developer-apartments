@@ -1,0 +1,45 @@
+/* Developer Apartments – admin fix pre CPT "apartment"
+   Cieľ: zrovnať polia v metaboxoch (Detaily bytu) pod seba
+   a odstrániť rozpad layoutu spôsobený float/inline-block mixom. */
+
+body.post-type-apartment .metabox-holder .inside .form-field,
+body.post-type-apartment .metabox-holder .inside p,
+body.post-type-apartment .metabox-holder .inside .components-base-control,
+body.post-type-apartment .metabox-holder .inside .cmb-row {
+    float: none !important;
+    clear: both !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 680px;
+    box-sizing: border-box;
+    margin: 8px 0;
+}
+
+/* label nad input, konzistentné medzery */
+body.post-type-apartment .metabox-holder .inside label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+/* rozumná šírka textových polí a selectov */
+body.post-type-apartment .metabox-holder .inside input[type="text"],
+body.post-type-apartment .metabox-holder .inside input[type="number"],
+body.post-type-apartment .metabox-holder .inside select,
+body.post-type-apartment .metabox-holder .inside .components-text-control__input,
+body.post-type-apartment .metabox-holder .inside input.regular-text {
+    width: 100% !important;
+    max-width: 360px;
+    box-sizing: border-box;
+}
+
+/* drobná vizuálna pomoc pre numeric polia cien a plôch */
+body.post-type-apartment .metabox-holder .inside input[type="number"] {
+    text-align: right;
+}
+
+/* ak metabox používa dvojstĺpcový flex/grid – vynútime jeden stĺpec */
+body.post-type-apartment .metabox-holder .inside .dev-two-col,
+body.post-type-apartment .metabox-holder .inside .columns-2 {
+    display: block !important;
+}
