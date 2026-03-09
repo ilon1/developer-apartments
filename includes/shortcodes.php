@@ -192,7 +192,7 @@ add_shortcode('dev_apt_price', function($atts){
     if($list !== '' && $disc !== '' && is_numeric($disc)){
         $list_fmt = number_format((float)$list, 0, ',', ' ').' €';
         $disc_fmt = number_format((float)$disc, 0, ',', ' ').' €';
-        return '<span class="dev-apt-price-old" style="text-decoration:line-through;opacity:.7">'.$list_fmt.'</span> <span class="dev-apt-price">'.$disc_fmt.'</span>';
+        return '<span class="dev-apt-price-old" style="text-decoration:line-through;opacity:.7">'.$list_fmt.'</span> <strong class="dev-apt-price">'.$disc_fmt.'</strong>';
     }
     if($list !== '' && is_numeric($list)){
         return '<span class="dev-apt-price">'.number_format((float)$list, 0, ',', ' ').' €</span>';

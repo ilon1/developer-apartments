@@ -383,18 +383,23 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
         $disc = get_post_meta($post_id,'apt_price_discount',true);
         $list = get_post_meta($post_id,'apt_price_list',true);
 
-        if($pres !== ''){
+        if($pres !== '' && is_numeric($pres)){
             return '<strong>'.number_format((float)$pres,0,',',' ').' €</strong>';
         }
-        if($disc !== ''){
-            $right = ($list !== '' ? number_format((float)$list,0,',',' ').' €' : '');
-            return '<strong>'.number_format((float)$disc,0,',',' ').' €</strong>
-                    <span class="dev-price-old">'.$right.'</span>';
+        if($disc !== '' && is_numeric($disc)){
+            $list_fmt = ($list !== '' && is_numeric($list)) ? number_format((float)$list,0,',',' ').' €' : '';
+            $disc_fmt = number_format((float)$disc,0,',',' ').' €';
+            $out = '';
+            if ($list_fmt !== '') {
+                $out .= '<span class="dev-price-old">'.$list_fmt.'</span> ';
+            }
+            $out .= '<strong class="dev-price-discount">'.$disc_fmt.'</strong>';
+            return $out;
         }
-        if($list !== ''){
+        if($list !== '' && is_numeric($list)){
             return number_format((float)$list,0,',',' ').' €';
         }
-        return 'Na vyžiadanie';
+        return __('Na vyžiadanie','developer-apartments');
     }
 
     public function render($attrs,$content=null,$render_slug){

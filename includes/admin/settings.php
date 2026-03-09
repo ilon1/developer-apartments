@@ -8,12 +8,21 @@ if ( ! defined('ABSPATH') ) exit;
  */
 
 /* ========================= MENU ========================= */
+function dev_apt_can_manage_settings() {
+    return current_user_can( 'manage_options' );
+}
+
+function dev_apt_can_manage_pricing() {
+    return current_user_can( 'manage_options' ) || ( defined( 'DEV_APT_CAP_PRICING' ) && current_user_can( DEV_APT_CAP_PRICING ) );
+}
+
 add_action('admin_menu', function(){
+    $cap = defined( 'DEV_APT_CAP_PRICING' ) ? DEV_APT_CAP_PRICING : 'manage_options';
     add_submenu_page(
         'edit.php?post_type=apartment',
         __('Developer Apartments','developer-apartments'),
         __('Nastavenia','developer-apartments'),
-        'manage_options',
+        $cap,
         'dev-apt-settings',
         'dev_apt_render_settings_page',
         30
@@ -322,6 +331,141 @@ function dev_apt_parse_xlsx_file($path){
 }
 
 /* ========================= IMPORT HELPERS ========================= */
+/** Stiahne súbor z URL (iba HTTP/HTTPS) do dočasného súboru. Vráti [ 'path' => ..., 'name' => ... ] alebo WP_Error. */
+function dev_apt_fetch_file_from_url( $url ) {
+    $url = esc_url_raw( trim( $url ) );
+    if ( ! $url ) {
+        return new WP_Error( 'missing_url', __( 'Zadajte URL súboru.', 'developer-apartments' ) );
+    }
+    $parsed = parse_url( $url );
+    $scheme = isset( $parsed['scheme'] ) ? strtolower( $parsed['scheme'] ) : '';
+    $name = isset( $parsed['path'] ) ? basename( $parsed['path'] ) : 'import.csv';
+
+    if ( ! in_array( $scheme, [ 'http', 'https' ], true ) ) {
+        return new WP_Error( 'unsupported_scheme', __( 'Podporované sú len http: a https: URL. Pre FTP použite sekciu Import z FTP.', 'developer-apartments' ) );
+    }
+
+    $tmp = download_url( $url, 30 );
+    if ( is_wp_error( $tmp ) ) {
+        return $tmp;
+    }
+    return [ 'path' => $tmp, 'name' => $name ];
+}
+
+/* ========================= FTP OPTIONS (samostatné polia: server, user, heslo, cesta) ========================= */
+const DEV_APT_FTP_OPTION = 'dev_apt_ftp_options';
+
+function dev_apt_ftp_default_options() {
+    return [
+        'host'          => '',
+        'user'          => '',
+        'pass'          => '',
+        'path'          => '',   // adresár alebo celá cesta k súboru
+        'auto_enabled'  => 0,
+        'auto_interval' => 3600, // sekundy: 900=15min, 3600=1h, 21600=6h
+    ];
+}
+
+function dev_apt_get_ftp_options() {
+    return wp_parse_args( get_option( DEV_APT_FTP_OPTION, [] ), dev_apt_ftp_default_options() );
+}
+
+add_action( 'admin_init', function() {
+    register_setting( 'dev_apt_ftp_options', DEV_APT_FTP_OPTION, [
+        'sanitize_callback' => function( $in ) {
+            $o = dev_apt_ftp_default_options();
+            $old = get_option( DEV_APT_FTP_OPTION, [] );
+            $o['host'] = isset( $in['host'] ) ? sanitize_text_field( $in['host'] ) : '';
+            $o['user'] = isset( $in['user'] ) ? sanitize_text_field( $in['user'] ) : '';
+            $o['pass'] = isset( $in['pass'] ) && $in['pass'] !== '' ? sanitize_text_field( $in['pass'] ) : ( isset( $old['pass'] ) ? $old['pass'] : '' );
+            $o['path'] = isset( $in['path'] ) ? sanitize_text_field( $in['path'] ) : '';
+            $o['auto_enabled'] = ! empty( $in['auto_enabled'] ) ? 1 : 0;
+            $allowed = [ 900 => 900, 3600 => 3600, 21600 => 21600 ];
+            $o['auto_interval'] = isset( $in['auto_interval'] ) && isset( $allowed[ (int) $in['auto_interval'] ] ) ? (int) $in['auto_interval'] : 3600;
+            return $o;
+        },
+    ] );
+}, 5 );
+
+/** Pripojí na FTP a vráti connection alebo null. */
+function dev_apt_ftp_connect( $host, $user, $pass, $port = 21 ) {
+    if ( ! function_exists( 'ftp_connect' ) ) return null;
+    $conn = @ftp_connect( $host, $port, 10 );
+    if ( ! $conn ) return null;
+    if ( ! @ftp_login( $conn, $user ?: 'anonymous', $pass ?: 'anonymous@' ) ) {
+        ftp_close( $conn );
+        return null;
+    }
+    @ftp_pasv( $conn, true );
+    return $conn;
+}
+
+/**
+ * Nájde na FTP súbor (podľa cesty – adresár alebo konkrétny súbor), stiahne ho.
+ * Vráti [ 'path' => local_tmp_path, 'name' => filename, 'remote_path' => full remote path ] alebo WP_Error.
+ * Ak path je adresár: hľadá najnovší .csv alebo .xlsx. Ak path je súbor: stiahne ten súbor.
+ */
+function dev_apt_ftp_fetch_file( $host, $user, $pass, $path ) {
+    $path = trim( $path );
+    if ( ! $host || ! $path ) {
+        return new WP_Error( 'ftp_missing', __( 'Vyplňte FTP server a cestu.', 'developer-apartments' ) );
+    }
+    $conn = dev_apt_ftp_connect( $host, $user, $pass );
+    if ( ! $conn ) {
+        return new WP_Error( 'ftp_connect', __( 'Nepodarilo sa pripojiť na FTP server.', 'developer-apartments' ) );
+    }
+    $remote = preg_replace( '#/+#', '/', '/' . trim( $path, '/' ) );
+    $is_file = ( substr( strtolower( $remote ), -4 ) === '.csv' || substr( strtolower( $remote ), -5 ) === '.xlsx' );
+    $remote_file = $remote;
+    if ( ! $is_file ) {
+        $list = @ftp_nlist( $conn, $remote );
+        if ( ! is_array( $list ) ) {
+            ftp_close( $conn );
+            return new WP_Error( 'ftp_list', __( 'Nepodarilo sa získať zoznam súborov z FTP.', 'developer-apartments' ) );
+        }
+        $candidates = [];
+        foreach ( $list as $item ) {
+            $base = basename( $item );
+            if ( preg_match( '/\.(csv|xlsx)$/i', $base ) ) {
+                $candidates[] = $item;
+            }
+        }
+        if ( empty( $candidates ) ) {
+            ftp_close( $conn );
+            return new WP_Error( 'ftp_no_file', __( 'V zadanom adresári nie je žiadny súbor .csv alebo .xlsx.', 'developer-apartments' ) );
+        }
+        $newest = null;
+        $newest_mtime = 0;
+        foreach ( $candidates as $c ) {
+            $m = @ftp_mdtm( $conn, $c );
+            if ( $m > $newest_mtime ) {
+                $newest_mtime = $m;
+                $newest = $c;
+            }
+        }
+        $remote_file = $newest;
+    }
+    $tmp = wp_tempnam( 'dev-apt-ftp' );
+    $ok = @ftp_get( $conn, $tmp, $remote_file, FTP_BINARY );
+    ftp_close( $conn );
+    if ( ! $ok ) {
+        @unlink( $tmp );
+        return new WP_Error( 'ftp_get', __( 'Nepodarilo sa stiahnuť súbor z FTP.', 'developer-apartments' ) );
+    }
+    $name = basename( $remote_file );
+    return [ 'path' => $tmp, 'name' => $name, 'remote_path' => $remote_file ];
+}
+
+/** Vymaže súbor na FTP po úspešnom importe. */
+function dev_apt_ftp_delete_file( $host, $user, $pass, $remote_path ) {
+    if ( ! $host || ! $remote_path ) return false;
+    $conn = dev_apt_ftp_connect( $host, $user, $pass );
+    if ( ! $conn ) return false;
+    $ok = @ftp_delete( $conn, $remote_path );
+    ftp_close( $conn );
+    return $ok;
+}
+
 /** Overí, či je ID platný attachment v médiách (obrázok, PDF, atď.). */
 function dev_apt_is_valid_attachment_id( $attachment_id ) {
     if ( ! $attachment_id || absint( $attachment_id ) <= 0 ) {
@@ -483,8 +627,29 @@ function dev_apt_apply_row($row,$opts){
 }
 function dev_apt_apply_row_pricing($row){
     $pid=dev_apt_find_post($row); if(!$pid){ return ['status'=>'miss','msg'=>'Post not found']; }
-    if(isset($row['status_slug'])){ $t=get_term_by('slug', sanitize_title($row['status_slug']), 'apartment_status'); if($t && !is_wp_error($t)) wp_set_post_terms($pid, [$t->term_id], 'apartment_status', false); }
-    foreach(['price_list'=>'apt_price_list','price_discount'=>'apt_price_discount','price_presale'=>'apt_price_presale'] as $src=>$mk){ if(array_key_exists($src,$row)){ $v = dev_apt_normalize_decimal($row[$src]); if($v==='') delete_post_meta($pid,$mk); else update_post_meta($pid,$mk, $v); } }
+    // Status: 1:1 – ak je stĺpec v súbore, prepíš (aj prázdna hodnota = vymazať status)
+    if (array_key_exists('status_slug', $row)) {
+        $slug = is_string($row['status_slug']) ? trim($row['status_slug']) : '';
+        if ($slug === '') {
+            wp_set_post_terms($pid, [], 'apartment_status', false);
+        } else {
+            $t = get_term_by('slug', sanitize_title($slug), 'apartment_status');
+            if ($t && !is_wp_error($t)) {
+                wp_set_post_terms($pid, [$t->term_id], 'apartment_status', false);
+            }
+        }
+    }
+    // Ceny: 1:1 – prázdna bunka = vymazať meta
+    foreach(['price_list'=>'apt_price_list','price_discount'=>'apt_price_discount','price_presale'=>'apt_price_presale'] as $src=>$mk){
+        if (array_key_exists($src, $row)) {
+            $v = dev_apt_normalize_decimal($row[$src]);
+            if ($v === '') {
+                delete_post_meta($pid, $mk);
+            } else {
+                update_post_meta($pid, $mk, $v);
+            }
+        }
+    }
     return ['status'=>'ok','msg'=>'updated','ID'=>$pid];
 }
 
@@ -501,7 +666,7 @@ add_action('admin_post_dev_apt_export', function(){
     if($fmt==='xlsx') dev_apt_output_xlsx($headers,$rows,'apartmany-export.xlsx'); else dev_apt_output_csv($headers,$rows,$opts['csv_delimiter'],'apartmany-export.csv');
 });
 add_action('admin_post_dev_apt_export_pricing', function(){
-    if(!current_user_can('manage_options')) wp_die('forbidden');
+    if(!current_user_can('manage_options') && !current_user_can(DEV_APT_CAP_PRICING)) wp_die('forbidden');
     check_admin_referer('dev_apt_export_pricing');
     $opts=dev_apt_get_options();
     $filters = [];
@@ -529,16 +694,205 @@ add_action('admin_post_dev_apt_import', function(){
     fclose($fh_t); fclose($fh_c); dev_apt_cache_bump(); wp_safe_redirect( add_query_arg(['post_type'=>'apartment','page'=>'dev-apt-settings','import_done'=>1,'ok'=>$ok,'miss'=>$miss,'log'=>rawurlencode(basename($txt)),'logcsv'=>rawurlencode(basename($csv))], admin_url('edit.php')) ); exit;
 });
 add_action('admin_post_dev_apt_import_pricing', function(){
-    if(!current_user_can('manage_options')) wp_die('forbidden');
+    if(!current_user_can('manage_options') && !current_user_can(DEV_APT_CAP_PRICING)) wp_die('forbidden');
     check_admin_referer('dev_apt_import_pricing');
-    if(empty($_FILES['import_file']['tmp_name'])) wp_die('No file');
-    $opts=dev_apt_get_options(); $tmp=$_FILES['import_file']['tmp_name']; $name=$_FILES['import_file']['name'];
-    $ext=strtolower(pathinfo($name,PATHINFO_EXTENSION));
-    if(!in_array($ext, ['csv','xlsx'], true)) wp_die(__('Povolené formáty sú len .csv a .xlsx','developer-apartments')); if($ext==='xlsx'){ $rows=dev_apt_parse_xlsx_file($tmp); } else { $rows=dev_apt_parse_csv_file($tmp, $opts['csv_delimiter']); }
-    $dry = isset($_POST['mode']) && $_POST['mode']==='dry'; $headers=dev_apt_headers_pricing();
-    if($dry){ echo '<div class="wrap"><h1>Developer Apartments – Dry‑run import (Ceny & Statusy)</h1><p>'.esc_html(count($rows)).' riadkov.</p><table class="widefat striped"><thead><tr>'; foreach($headers as $h){ echo '<th>'.esc_html($h).'</th>'; } echo '</tr></thead><tbody>'; foreach($rows as $r){ echo '<tr>'; foreach($headers as $h){ echo '<td>'.esc_html($r[$h]??'').'</td>'; } echo '</tr>'; } echo '</tbody></table><p><a class="button" href="'.esc_url(admin_url('edit.php?post_type=apartment&page=dev-apt-settings')).'">Späť</a></p></div>'; exit; }
-    $u = wp_upload_dir(); $dir = trailingslashit($u['basedir']).'dev-apt-logs/'; if( ! file_exists($dir)) wp_mkdir_p($dir); $base = 'import-'.date('Ymd-His'); $txt=$dir.$base.'.log'; $csv=$dir.$base.'.csv'; $fh_t=fopen($txt,'a'); $fh_c=fopen($csv,'w'); fputcsv($fh_c,['row','apartment_code','ID','slug','result','message'],';'); fwrite($fh_t, "Developer Apartments import (pricing)\nFile: $name\nRows: ".count($rows)."\n\n"); $ok=0;$miss=0;$i=1; foreach($rows as $r){ $res=dev_apt_apply_row_pricing($r); if($res['status']==='ok'){ $ok++; fwrite($fh_t,'OK ID='.$res['ID'].' code='.(isset($r['apartment_code'])?$r['apartment_code']:'')."\n"); fputcsv($fh_c,[$i,$r['apartment_code']??'',$r['ID']??'',$r['slug']??'','OK','updated'],';'); } else { $miss++; fwrite($fh_t,'MISS code='.(isset($r['apartment_code'])?$r['apartment_code']:'').' slug='.(isset($r['slug'])?$r['slug']:'').' ID='.(isset($r['ID'])?$r['ID']:'')."\n"); fputcsv($fh_c,[$i,$r['apartment_code']??'',$r['ID']??'',$r['slug']??'','MISS',$res['msg']??'not matched'],';'); } $i++; } fclose($fh_t); fclose($fh_c); dev_apt_cache_bump(); wp_safe_redirect( add_query_arg(['post_type'=>'apartment','page'=>'dev-apt-settings','import_done'=>1,'ok'=>$ok,'miss'=>$miss,'log'=>rawurlencode(basename($txt)),'logcsv'=>rawurlencode(basename($csv))], admin_url('edit.php')) ); exit;
+
+    $opts = dev_apt_get_options();
+    $tmp_path = null;
+    $name = '';
+
+    if ( ! empty( $_POST['import_url'] ) ) {
+        $fetched = dev_apt_fetch_file_from_url( $_POST['import_url'] );
+        if ( is_wp_error( $fetched ) ) {
+            wp_die( esc_html( $fetched->get_error_message() ) );
+        }
+        $tmp_path = $fetched['path'];
+        $name = $fetched['name'];
+    } elseif ( ! empty( $_FILES['import_file']['tmp_name'] ) ) {
+        $tmp_path = $_FILES['import_file']['tmp_name'];
+        $name = $_FILES['import_file']['name'];
+    }
+
+    if ( ! $tmp_path || ! is_readable( $tmp_path ) ) {
+        wp_die( __( 'Nahrajte súbor alebo zadajte URL (HTTP/HTTPS).', 'developer-apartments' ) );
+    }
+
+    $ext = strtolower( pathinfo( $name, PATHINFO_EXTENSION ) );
+    if ( ! in_array( $ext, [ 'csv', 'xlsx' ], true ) ) {
+        if ( $tmp_path && strpos( $tmp_path, 'dev-apt' ) !== false ) {
+            @unlink( $tmp_path );
+        }
+        wp_die( __( 'Povolené formáty sú len .csv a .xlsx', 'developer-apartments' ) );
+    }
+
+    if ( $ext === 'xlsx' ) {
+        $rows = dev_apt_parse_xlsx_file( $tmp_path );
+    } else {
+        $rows = dev_apt_parse_csv_file( $tmp_path, $opts['csv_delimiter'] );
+    }
+
+    if ( $tmp_path && strpos( $tmp_path, 'dev-apt' ) !== false ) {
+        @unlink( $tmp_path );
+    }
+
+    $dry = isset( $_POST['mode'] ) && $_POST['mode'] === 'commit' ? false : true;
+    $headers = dev_apt_headers_pricing();
+    if ( $dry ) {
+        echo '<div class="wrap"><h1>Developer Apartments – Dry‑run import (Ceny & Statusy)</h1><p>' . esc_html( count( $rows ) ) . ' riadkov.</p><table class="widefat striped"><thead><tr>';
+        foreach ( $headers as $h ) { echo '<th>' . esc_html( $h ) . '</th>'; }
+        echo '</tr></thead><tbody>';
+        foreach ( $rows as $r ) {
+            echo '<tr>';
+            foreach ( $headers as $h ) { echo '<td>' . esc_html( $r[ $h ] ?? '' ) . '</td>'; }
+            echo '</tr>';
+        }
+        echo '</tbody></table><p><a class="button" href="' . esc_url( admin_url( 'edit.php?post_type=apartment&page=dev-apt-settings&tab=pricing' ) ) . '">Späť</a></p></div>';
+        exit;
+    }
+
+    $u = wp_upload_dir();
+    $dir = trailingslashit( $u['basedir'] ) . 'dev-apt-logs/';
+    if ( ! file_exists( $dir ) ) wp_mkdir_p( $dir );
+    $base = 'import-' . date( 'Ymd-His' );
+    $txt = $dir . $base . '.log';
+    $csv = $dir . $base . '.csv';
+    $fh_t = fopen( $txt, 'a' );
+    $fh_c = fopen( $csv, 'w' );
+    fputcsv( $fh_c, [ 'row', 'apartment_code', 'ID', 'slug', 'result', 'message' ], ';' );
+    fwrite( $fh_t, "Developer Apartments import (pricing)\nFile: $name\nRows: " . count( $rows ) . "\n\n" );
+    $ok = 0;
+    $miss = 0;
+    $i = 1;
+    foreach ( $rows as $r ) {
+        $res = dev_apt_apply_row_pricing( $r );
+        if ( $res['status'] === 'ok' ) {
+            $ok++;
+            fwrite( $fh_t, 'OK ID=' . $res['ID'] . ' code=' . ( isset( $r['apartment_code'] ) ? $r['apartment_code'] : '' ) . "\n" );
+            fputcsv( $fh_c, [ $i, $r['apartment_code'] ?? '', $r['ID'] ?? '', $r['slug'] ?? '', 'OK', 'updated' ], ';' );
+        } else {
+            $miss++;
+            fwrite( $fh_t, 'MISS code=' . ( isset( $r['apartment_code'] ) ? $r['apartment_code'] : '' ) . ' slug=' . ( isset( $r['slug'] ) ? $r['slug'] : '' ) . ' ID=' . ( isset( $r['ID'] ) ? $r['ID'] : '' ) . "\n" );
+            fputcsv( $fh_c, [ $i, $r['apartment_code'] ?? '', $r['ID'] ?? '', $r['slug'] ?? '', 'MISS', $res['msg'] ?? 'not matched' ], ';' );
+        }
+        $i++;
+    }
+    fclose( $fh_t );
+    fclose( $fh_c );
+    dev_apt_cache_bump();
+    wp_safe_redirect( add_query_arg( [ 'post_type' => 'apartment', 'page' => 'dev-apt-settings', 'tab' => 'pricing', 'import_done' => 1, 'ok' => $ok, 'miss' => $miss, 'log' => rawurlencode( basename( $txt ) ), 'logcsv' => rawurlencode( basename( $csv ) ) ], admin_url( 'edit.php' ) ) );
+    exit;
 });
+
+/* ========================= FTP IMPORT (samostatné polia + vymazanie po importe) ========================= */
+add_action( 'admin_post_dev_apt_import_pricing_ftp', function() {
+    if ( ! current_user_can( 'manage_options' ) && ! current_user_can( DEV_APT_CAP_PRICING ) ) wp_die( 'forbidden' );
+    check_admin_referer( 'dev_apt_import_pricing_ftp' );
+    $ftp = dev_apt_get_ftp_options();
+    if ( ! $ftp['host'] || ! $ftp['path'] ) {
+        wp_safe_redirect( add_query_arg( [ 'post_type' => 'apartment', 'page' => 'dev-apt-settings', 'tab' => 'pricing', 'ftp_error' => 'missing' ], admin_url( 'edit.php' ) ) );
+        exit;
+    }
+    $fetched = dev_apt_ftp_fetch_file( $ftp['host'], $ftp['user'], $ftp['pass'], $ftp['path'] );
+    if ( is_wp_error( $fetched ) ) {
+        wp_safe_redirect( add_query_arg( [ 'post_type' => 'apartment', 'page' => 'dev-apt-settings', 'tab' => 'pricing', 'ftp_error' => urlencode( $fetched->get_error_message() ) ], admin_url( 'edit.php' ) ) );
+        exit;
+    }
+    $tmp_path = $fetched['path'];
+    $name = $fetched['name'];
+    $remote_path = isset( $fetched['remote_path'] ) ? $fetched['remote_path'] : '';
+
+    $opts = dev_apt_get_options();
+    $ext = strtolower( pathinfo( $name, PATHINFO_EXTENSION ) );
+    if ( ! in_array( $ext, [ 'csv', 'xlsx' ], true ) ) {
+        @unlink( $tmp_path );
+        wp_safe_redirect( add_query_arg( [ 'post_type' => 'apartment', 'page' => 'dev-apt-settings', 'tab' => 'pricing', 'ftp_error' => 'invalid_format' ], admin_url( 'edit.php' ) ) );
+        exit;
+    }
+    $rows = $ext === 'xlsx' ? dev_apt_parse_xlsx_file( $tmp_path ) : dev_apt_parse_csv_file( $tmp_path, $opts['csv_delimiter'] );
+    @unlink( $tmp_path );
+
+    $u = wp_upload_dir();
+    $dir = trailingslashit( $u['basedir'] ) . 'dev-apt-logs/';
+    if ( ! file_exists( $dir ) ) wp_mkdir_p( $dir );
+    $base = 'import-ftp-' . date( 'Ymd-His' );
+    $txt = $dir . $base . '.log';
+    $csv = $dir . $base . '.csv';
+    $fh_t = fopen( $txt, 'a' );
+    $fh_c = fopen( $csv, 'w' );
+    fputcsv( $fh_c, [ 'row', 'apartment_code', 'ID', 'slug', 'result', 'message' ], ';' );
+    fwrite( $fh_t, "Developer Apartments import (FTP)\nFile: $name\nRows: " . count( $rows ) . "\n\n" );
+    $ok = 0;
+    $miss = 0;
+    $i = 1;
+    foreach ( $rows as $r ) {
+        $res = dev_apt_apply_row_pricing( $r );
+        if ( $res['status'] === 'ok' ) {
+            $ok++;
+            fwrite( $fh_t, 'OK ID=' . $res['ID'] . "\n" );
+            fputcsv( $fh_c, [ $i, $r['apartment_code'] ?? '', $r['ID'] ?? '', $r['slug'] ?? '', 'OK', 'updated' ], ';' );
+        } else {
+            $miss++;
+            fwrite( $fh_t, 'MISS code=' . ( $r['apartment_code'] ?? '' ) . "\n" );
+            fputcsv( $fh_c, [ $i, $r['apartment_code'] ?? '', $r['ID'] ?? '', $r['slug'] ?? '', 'MISS', $res['msg'] ?? 'not matched' ], ';' );
+        }
+        $i++;
+    }
+    fclose( $fh_t );
+    fclose( $fh_c );
+    dev_apt_cache_bump();
+
+    if ( $remote_path ) {
+        dev_apt_ftp_delete_file( $ftp['host'], $ftp['user'], $ftp['pass'], $remote_path );
+    }
+
+    wp_safe_redirect( add_query_arg( [ 'post_type' => 'apartment', 'page' => 'dev-apt-settings', 'tab' => 'pricing', 'import_done' => 1, 'ok' => $ok, 'miss' => $miss, 'log' => rawurlencode( basename( $txt ) ), 'logcsv' => rawurlencode( basename( $csv ) ), 'ftp_deleted' => 1 ], admin_url( 'edit.php' ) ) );
+    exit;
+});
+
+/* ========================= CRON: automatická kontrola FTP ========================= */
+const DEV_APT_CRON_FTP = 'dev_apt_ftp_auto_import';
+
+add_action( DEV_APT_CRON_FTP, function() {
+    $ftp = dev_apt_get_ftp_options();
+    if ( empty( $ftp['auto_enabled'] ) || ! $ftp['host'] || ! $ftp['path'] ) return;
+    $fetched = dev_apt_ftp_fetch_file( $ftp['host'], $ftp['user'], $ftp['pass'], $ftp['path'] );
+    if ( is_wp_error( $fetched ) ) return;
+    $tmp_path = $fetched['path'];
+    $name = $fetched['name'];
+    $remote_path = isset( $fetched['remote_path'] ) ? $fetched['remote_path'] : '';
+    $opts = dev_apt_get_options();
+    $ext = strtolower( pathinfo( $name, PATHINFO_EXTENSION ) );
+    if ( ! in_array( $ext, [ 'csv', 'xlsx' ], true ) ) { @unlink( $tmp_path ); return; }
+    $rows = $ext === 'xlsx' ? dev_apt_parse_xlsx_file( $tmp_path ) : dev_apt_parse_csv_file( $tmp_path, $opts['csv_delimiter'] );
+    @unlink( $tmp_path );
+    foreach ( $rows as $r ) { dev_apt_apply_row_pricing( $r ); }
+    dev_apt_cache_bump();
+    if ( $remote_path ) { dev_apt_ftp_delete_file( $ftp['host'], $ftp['user'], $ftp['pass'], $remote_path ); }
+} );
+
+function dev_apt_ftp_schedule_cron() {
+    $ftp = dev_apt_get_ftp_options();
+    $interval = (int) $ftp['auto_interval'];
+    wp_clear_scheduled_hook( DEV_APT_CRON_FTP );
+    if ( ! empty( $ftp['auto_enabled'] ) && $ftp['host'] && $ftp['path'] && $interval > 0 ) {
+        wp_schedule_event( time(), dev_apt_ftp_cron_interval_name( $interval ), DEV_APT_CRON_FTP );
+    }
+}
+
+function dev_apt_ftp_cron_interval_name( $seconds ) {
+    $map = [ 900 => 'dev_apt_15min', 3600 => 'dev_apt_1hour', 21600 => 'dev_apt_6hour' ];
+    return isset( $map[ $seconds ] ) ? $map[ $seconds ] : 'hourly';
+}
+
+add_filter( 'cron_schedules', function( $schedules ) {
+    $schedules['dev_apt_15min'] = [ 'interval' => 900, 'display' => __( 'Každých 15 minút', 'developer-apartments' ) ];
+    $schedules['dev_apt_1hour'] = [ 'interval' => 3600, 'display' => __( 'Každú hodinu', 'developer-apartments' ) ];
+    $schedules['dev_apt_6hour'] = [ 'interval' => 21600, 'display' => __( 'Každých 6 hodín', 'developer-apartments' ) ];
+    return $schedules;
+} );
+
+add_action( 'update_option_' . DEV_APT_FTP_OPTION, 'dev_apt_ftp_schedule_cron' );
+add_action( 'add_option_' . DEV_APT_FTP_OPTION, 'dev_apt_ftp_schedule_cron' );
 
 /* ========================= CACHE BUMP ========================= */
 function dev_apt_cache_bump(){ $o = dev_apt_get_options(); $o['cache_bump'] = max(1, intval($o['cache_bump'])) + 1; update_option('dev_apt_options', $o); }
@@ -547,22 +901,79 @@ add_action('set_object_terms', function($object_id,$terms,$tt_ids,$taxonomy){ if
 foreach(array('apartment_status','project_structure','apartment_type') as $tax){ add_action('created_'.$tax, 'dev_apt_cache_bump'); add_action('edited_'.$tax, 'dev_apt_cache_bump'); add_action('delete_'.$tax, 'dev_apt_cache_bump'); }
 
 /* ========================= UI RENDER ========================= */
-function dev_apt_render_settings_page(){ $o=dev_apt_get_options(); $delims = dev_apt_available_delimiters(); $ttl_opts = [0=>'Vypnuté (bez cache)',600=>'10 min',1800=>'30 min',3600=>'1 h',21600=>'6 h',43200=>'12 h']; ?>
-<div class="wrap">
-    <h1><?php _e('Developer Apartments – Nastavenia & Import/Export','developer-apartments');?></h1>
+function dev_apt_render_settings_page() {
+    $o = dev_apt_get_options();
+    $delims = dev_apt_available_delimiters();
+    $ttl_opts = [ 0 => 'Vypnuté (bez cache)', 600 => '10 min', 1800 => '30 min', 3600 => '1 h', 21600 => '6 h', 43200 => '12 h' ];
 
-    <?php if(isset($_GET['import_done'])): ?>
+    $is_pricing_only = current_user_can( DEV_APT_CAP_PRICING ) && ! current_user_can( 'manage_options' );
+    $current_tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : ( $is_pricing_only ? 'pricing' : 'general' );
+    $tabs = [
+        'general'  => __( 'Všeobecné', 'developer-apartments' ),
+        'export'   => __( 'Export', 'developer-apartments' ),
+        'import'   => __( 'Import', 'developer-apartments' ),
+        'pricing'  => __( 'Ceny & Statusy', 'developer-apartments' ),
+        'polygons' => __( 'Export polygonov', 'developer-apartments' ),
+    ];
+    if ( $is_pricing_only ) {
+        $tabs = [ 'pricing' => $tabs['pricing'] ];
+        $current_tab = 'pricing';
+    } elseif ( ! isset( $tabs[ $current_tab ] ) ) {
+        $current_tab = 'general';
+    }
+
+    $base_url = add_query_arg( [ 'post_type' => 'apartment', 'page' => 'dev-apt-settings' ], admin_url( 'edit.php' ) );
+    ?>
+<div class="wrap">
+    <h1><?php echo esc_html( $is_pricing_only ? __( 'Ceny & Statusy – export/import', 'developer-apartments' ) : __( 'Developer Apartments – Nastavenia & Import/Export', 'developer-apartments' ) ); ?></h1>
+
+    <?php if ( isset( $_GET['import_done'] ) ) : ?>
         <div class="notice notice-success"><p>
-            <?php printf(__('Import hotový: %d aktualizovaných, %d nespárovaných.','developer-apartments'), (int)$_GET['ok'], (int)$_GET['miss']);
-            if(isset($_GET['log'])){ $u = wp_upload_dir(); $url = trailingslashit($u['baseurl']).'dev-apt-logs/'.sanitize_file_name($_GET['log']); echo ' – <a href="'.esc_url($url).'" target="_blank" rel="noopener">'.__('Stiahnuť log','developer-apartments').'</a>'; }
-            if(isset($_GET['logcsv'])){ $u = wp_upload_dir(); $url = trailingslashit($u['baseurl']).'dev-apt-logs/'.sanitize_file_name($_GET['logcsv']); echo ' – <a href="'.esc_url($url).'" target="_blank" rel="noopener">CSV log</a>'; } ?>
+            <?php printf( __( 'Import hotový: %d aktualizovaných, %d nespárovaných.', 'developer-apartments' ), (int) $_GET['ok'], (int) $_GET['miss'] ); ?>
+            <?php if ( ! empty( $_GET['ftp_deleted'] ) ) echo ' ' . __( 'Súbor bol po importe vymazaný z FTP.', 'developer-apartments' ); ?>
+            <?php if ( isset( $_GET['log'] ) ) { $u = wp_upload_dir(); $url = trailingslashit( $u['baseurl'] ) . 'dev-apt-logs/' . sanitize_file_name( $_GET['log'] ); echo ' – <a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">' . __( 'Stiahnuť log', 'developer-apartments' ) . '</a>'; } ?>
+            <?php if ( isset( $_GET['logcsv'] ) ) { $u = wp_upload_dir(); $url = trailingslashit( $u['baseurl'] ) . 'dev-apt-logs/' . sanitize_file_name( $_GET['logcsv'] ); echo ' – <a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">CSV log</a>'; } ?>
         </p></div>
     <?php endif; ?>
+    <?php if ( isset( $_GET['ftp_error'] ) && $_GET['ftp_error'] !== '' ) : ?>
+        <?php
+        $err = (string) $_GET['ftp_error'];
+        $err_msg = $err === 'missing' ? __( 'Vyplňte FTP server a cestu.', 'developer-apartments' ) : ( $err === 'invalid_format' ? __( 'Na FTP sa nenašiel platný súbor .csv alebo .xlsx.', 'developer-apartments' ) : esc_html( urldecode( $err ) ) );
+        ?>
+        <div class="notice notice-error"><p><?php echo $err_msg; ?></p></div>
+    <?php endif; ?>
 
-    <h2><?php _e('Shortcodes a Divi moduly','developer-apartments'); ?></h2>
-    <p><?php _e('Pre použitie v moduloch Kód (Code) alebo pri manuálnom vkladaní do stránky.','developer-apartments'); ?></p>
+    <?php if ( ! $is_pricing_only ) : ?>
+    <nav class="nav-tab-wrapper wp-clearfix" style="margin-bottom: 16px;">
+        <?php foreach ( $tabs as $tab => $label ) : ?>
+            <a href="<?php echo esc_url( add_query_arg( 'tab', $tab, $base_url ) ); ?>" class="nav-tab <?php echo $current_tab === $tab ? 'nav-tab-active' : ''; ?>"><?php echo esc_html( $label ); ?></a>
+        <?php endforeach; ?>
+    </nav>
+    <?php endif; ?>
+
+    <?php
+    if ( $current_tab === 'general' ) {
+        dev_apt_render_tab_general( $o, $delims, $ttl_opts );
+    } elseif ( $current_tab === 'export' ) {
+        dev_apt_render_tab_export();
+    } elseif ( $current_tab === 'import' ) {
+        dev_apt_render_tab_import();
+    } elseif ( $current_tab === 'pricing' ) {
+        dev_apt_render_tab_pricing();
+    } elseif ( $current_tab === 'polygons' ) {
+        dev_apt_render_polygons_export_section();
+    }
+    ?>
+</div>
+<?php
+}
+
+function dev_apt_render_tab_general( $o, $delims, $ttl_opts ) {
+    ?>
+    <h2><?php _e( 'Shortcodes a Divi moduly', 'developer-apartments' ); ?></h2>
+    <p><?php _e( 'Pre použitie v moduloch Kód (Code) alebo pri manuálnom vkladaní do stránky.', 'developer-apartments' ); ?></p>
     <table class="widefat striped" style="max-width:800px;margin-bottom:20px">
-        <thead><tr><th>Shortcode</th><th><?php _e('Popis','developer-apartments'); ?></th></tr></thead>
+        <thead><tr><th>Shortcode</th><th><?php _e( 'Popis', 'developer-apartments' ); ?></th></tr></thead>
         <tbody>
             <tr><td><code>[dev_apt_structure_breadcrumb]</code></td><td>Breadcrumb zo štruktúry projektu</td></tr>
             <tr><td><code>[dev_apt_featured_image]</code></td><td>Náhľadový obrázok bytu (fallback pre et_pb_post_featured_image)</td></tr>
@@ -575,134 +986,207 @@ function dev_apt_render_settings_page(){ $o=dev_apt_get_options(); $delims = dev
             <tr><td><code>[dev_apartment_gallery lightbox="yes"]</code></td><td>Galéria obrázkov s Lightbox efektom</td></tr>
         </tbody>
     </table>
-    <p><strong><?php _e('Divi moduly','developer-apartments'); ?>:</strong> Mapa Bytov (v2), Tabuľka Bytov (v2) s náhľadom obrázka pri hoveri, <strong>Údaje bytu</strong>, <strong>Breadcrumb štruktúry</strong>, <strong>Náhľadový obrázok bytu</strong>, <strong>Údaje bytu (mriežka)</strong>, <strong>Galéria bytu</strong>, <strong>Podobné byty</strong>, <strong>Tlačidlo pôdorys</strong>, <strong>Tlačidlo Mám záujem</strong> – všetky s editovateľným štýlom.</p>
+    <p><strong><?php _e( 'Divi moduly', 'developer-apartments' ); ?>:</strong> Mapa Bytov (v2), Tabuľka Bytov (v2) s náhľadom obrázka pri hoveri, <strong>Údaje bytu</strong>, <strong>Breadcrumb štruktúry</strong>, <strong>Náhľadový obrázok bytu</strong>, <strong>Údaje bytu (mriežka)</strong>, <strong>Galéria bytu</strong>, <strong>Podobné byty</strong>, <strong>Tlačidlo pôdorys</strong>, <strong>Tlačidlo Mám záujem</strong> – všetky s editovateľným štýlom.</p>
 
     <hr/>
 
     <form method="post" action="options.php" style="margin-top:10px;">
-        <?php settings_fields('dev_apt_options'); ?>
+        <?php settings_fields( 'dev_apt_options' ); ?>
         <table class="form-table" role="presentation"><tbody>
             <tr>
-                <th scope="row"><label><?php _e('CSV oddeľovač','developer-apartments');?></label></th>
+                <th scope="row"><label><?php _e( 'CSV oddeľovač', 'developer-apartments' ); ?></label></th>
                 <td>
-                    <?php foreach ($delims as $value => $label): ?>
+                    <?php foreach ( $delims as $value => $label ) : ?>
                     <label style="display:inline-block; margin-right:12px;">
-                        <input type="radio" name="dev_apt_options[csv_delimiter]" value="<?php echo esc_attr($value); ?>" <?php checked($o['csv_delimiter'],$value); ?> />
-                        <?php echo esc_html($label); ?>
+                        <input type="radio" name="dev_apt_options[csv_delimiter]" value="<?php echo esc_attr( $value ); ?>" <?php checked( $o['csv_delimiter'], $value ); ?> />
+                        <?php echo esc_html( $label ); ?>
                     </label>
                     <?php endforeach; ?>
                 </td>
             </tr>
             <tr>
-                <th scope="row"><label><?php _e('CSV desatinné čiarky (SK)','developer-apartments');?></label></th>
-                <td><label><input type="checkbox" name="dev_apt_options[csv_decimal_comma]" value="1" <?php checked(1,$o['csv_decimal_comma']);?>>
-                    <?php _e('Exportovať čísla v CSV s čiarkou (napr. 47,09)','developer-apartments');?></label></td>
+                <th scope="row"><label><?php _e( 'CSV desatinné čiarky (SK)', 'developer-apartments' ); ?></label></th>
+                <td><label><input type="checkbox" name="dev_apt_options[csv_decimal_comma]" value="1" <?php checked( 1, $o['csv_decimal_comma'] ); ?>>
+                    <?php _e( 'Exportovať čísla v CSV s čiarkou (napr. 47,09)', 'developer-apartments' ); ?></label></td>
             </tr>
             <tr>
-                <th scope="row"><label><?php _e('Slug statusu „Voľný“','developer-apartments');?></label></th>
-                <td><input type="text" name="dev_apt_options[free_status_slug]" value="<?php echo esc_attr($o['free_status_slug']); ?>" /></td>
+                <th scope="row"><label><?php _e( 'Slug statusu „Voľný“', 'developer-apartments' ); ?></label></th>
+                <td><input type="text" name="dev_apt_options[free_status_slug]" value="<?php echo esc_attr( $o['free_status_slug'] ); ?>" /></td>
             </tr>
             <tr>
-                <th scope="row"><label><?php _e('TTL cache (free_count)','developer-apartments');?></label></th>
+                <th scope="row"><label><?php _e( 'TTL cache (free_count)', 'developer-apartments' ); ?></label></th>
                 <td>
                     <select name="dev_apt_options[cache_ttl]">
-                        <?php foreach($ttl_opts as $sec=>$lbl){ echo '<option value="'.esc_attr($sec).'" '.selected($o['cache_ttl'],$sec,false).'>'.esc_html($lbl).'</option>'; } ?>
+                        <?php foreach ( $ttl_opts as $sec => $lbl ) { echo '<option value="' . esc_attr( $sec ) . '" ' . selected( $o['cache_ttl'], $sec, false ) . '>' . esc_html( $lbl ) . '</option>'; } ?>
                     </select>
                 </td>
             </tr>
             <tr>
-                <th scope="row"><label><?php _e('Stav novovytvorených bytov pri importe','developer-apartments');?></label></th>
+                <th scope="row"><label><?php _e( 'Stav novovytvorených bytov pri importe', 'developer-apartments' ); ?></label></th>
                 <td>
-                    <label><input type="radio" name="dev_apt_options[import_create_status]" value="publish" <?php checked($o['import_create_status'],'publish');?>> <?php _e('publish','developer-apartments');?></label>
-                    <label style="margin-left:10px;"><input type="radio" name="dev_apt_options[import_create_status]" value="draft" <?php checked($o['import_create_status'],'draft');?>> <?php _e('draft','developer-apartments');?></label>
+                    <label><input type="radio" name="dev_apt_options[import_create_status]" value="publish" <?php checked( $o['import_create_status'], 'publish' ); ?>> <?php _e( 'publish', 'developer-apartments' ); ?></label>
+                    <label style="margin-left:10px;"><input type="radio" name="dev_apt_options[import_create_status]" value="draft" <?php checked( $o['import_create_status'], 'draft' ); ?>> <?php _e( 'draft', 'developer-apartments' ); ?></label>
                 </td>
             </tr>
             <tr>
-                <th scope="row"><?php _e('Odinštalácia – čo zmazať','developer-apartments');?></th>
+                <th scope="row"><?php _e( 'Odinštalácia – čo zmazať', 'developer-apartments' ); ?></th>
                 <td>
-                    <label><input type="checkbox" name="dev_apt_options[uninstall_delete_posts]" value="1" <?php checked($o['uninstall_delete_posts'],1);?>> <?php _e('Byty (CPT)','developer-apartments');?></label><br/>
-                    <label><input type="checkbox" name="dev_apt_options[uninstall_delete_terms]" value="1" <?php checked($o['uninstall_delete_terms'],1);?>> <?php _e('Taxonómie (termíny)','developer-apartments');?></label><br/>
-                    <label><input type="checkbox" name="dev_apt_options[uninstall_delete_term_meta]" value="1" <?php checked($o['uninstall_delete_term_meta'],1);?>> <?php _e('Term meta / Mapy','developer-apartments');?></label><br/>
-                    <label><input type="checkbox" name="dev_apt_options[uninstall_delete_options]" value="1" <?php checked($o['uninstall_delete_options'],1);?>> <?php _e('Nastavenia','developer-apartments');?></label>
+                    <label><input type="checkbox" name="dev_apt_options[uninstall_delete_posts]" value="1" <?php checked( $o['uninstall_delete_posts'], 1 ); ?>> <?php _e( 'Byty (CPT)', 'developer-apartments' ); ?></label><br/>
+                    <label><input type="checkbox" name="dev_apt_options[uninstall_delete_terms]" value="1" <?php checked( $o['uninstall_delete_terms'], 1 ); ?>> <?php _e( 'Taxonómie (termíny)', 'developer-apartments' ); ?></label><br/>
+                    <label><input type="checkbox" name="dev_apt_options[uninstall_delete_term_meta]" value="1" <?php checked( $o['uninstall_delete_term_meta'], 1 ); ?>> <?php _e( 'Term meta / Mapy', 'developer-apartments' ); ?></label><br/>
+                    <label><input type="checkbox" name="dev_apt_options[uninstall_delete_options]" value="1" <?php checked( $o['uninstall_delete_options'], 1 ); ?>> <?php _e( 'Nastavenia', 'developer-apartments' ); ?></label>
                 </td>
             </tr>
         </tbody></table>
         <?php submit_button(); ?>
     </form>
+    <?php
+}
 
-    <hr/>
-
-    <h2><?php _e('Export','developer-apartments'); ?></h2>
-    <form method="post" action="<?php echo esc_url( admin_url('admin-post.php') ); ?>">
-        <?php wp_nonce_field('dev_apt_export'); ?>
+function dev_apt_render_tab_export() {
+    ?>
+    <h2><?php _e( 'Export', 'developer-apartments' ); ?></h2>
+    <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+        <?php wp_nonce_field( 'dev_apt_export' ); ?>
         <input type="hidden" name="action" value="dev_apt_export" />
         <fieldset style="margin:8px 0;padding:8px;border:1px solid #ddd;">
-            <legend><?php _e('Filtre','developer-apartments'); ?></legend>
-            <label><?php _e('Status','developer-apartments'); ?>:
+            <legend><?php _e( 'Filtre', 'developer-apartments' ); ?></legend>
+            <label><?php _e( 'Status', 'developer-apartments' ); ?>:
                 <select name="filter_status">
-                    <option value="">— <?php _e('všetko','developer-apartments'); ?> —</option>
-                    <?php $sts = get_terms(array('taxonomy'=>'apartment_status','hide_empty'=>false)); if(!is_wp_error($sts)) foreach($sts as $t){ echo '<option value="'.esc_attr($t->slug).'">'.esc_html($t->name).'</option>'; } ?>
+                    <option value="">— <?php _e( 'všetko', 'developer-apartments' ); ?> —</option>
+                    <?php $sts = get_terms( array( 'taxonomy' => 'apartment_status', 'hide_empty' => false ) ); if ( ! is_wp_error( $sts ) ) foreach ( $sts as $t ) { echo '<option value="' . esc_attr( $t->slug ) . '">' . esc_html( $t->name ) . '</option>'; } ?>
                 </select>
             </label>
-            <label style="margin-left:12px;"><?php _e('Štruktúra','developer-apartments'); ?>:
+            <label style="margin-left:12px;"><?php _e( 'Štruktúra', 'developer-apartments' ); ?>:
                 <select name="filter_structure">
-                    <option value="">— <?php _e('všetko','developer-apartments'); ?> —</option>
-                    <?php $ps = get_terms(array('taxonomy'=>'project_structure','hide_empty'=>false)); if(!is_wp_error($ps)) foreach($ps as $t){ echo '<option value="'.esc_attr($t->term_id).'">'.esc_html($t->name).'</option>'; } ?>
+                    <option value="">— <?php _e( 'všetko', 'developer-apartments' ); ?> —</option>
+                    <?php $ps = get_terms( array( 'taxonomy' => 'project_structure', 'hide_empty' => false ) ); if ( ! is_wp_error( $ps ) ) foreach ( $ps as $t ) { echo '<option value="' . esc_attr( $t->term_id ) . '">' . esc_html( $t->name ) . '</option>'; } ?>
                 </select>
             </label>
         </fieldset>
         <label><input type="radio" name="format" value="csv" checked> CSV</label>
         <label style="margin-left:10px"><input type="radio" name="format" value="xlsx"> XLSX</label>
-        <?php submit_button(__('Stiahnuť export','developer-apartments'), 'primary', 'submit', false, ['style'=>'margin-left:10px']); ?>
+        <?php submit_button( __( 'Stiahnuť export', 'developer-apartments' ), 'primary', 'submit', false, [ 'style' => 'margin-left:10px' ] ); ?>
     </form>
+    <?php
+}
 
-    <h2><?php _e('Import','developer-apartments');?></h2>
-    <form method="post" action="<?php echo esc_url( admin_url('admin-post.php') ); ?>" enctype="multipart/form-data">
-        <?php wp_nonce_field('dev_apt_import'); ?>
+function dev_apt_render_tab_import() {
+    ?>
+    <h2><?php _e( 'Import', 'developer-apartments' ); ?></h2>
+    <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data">
+        <?php wp_nonce_field( 'dev_apt_import' ); ?>
         <input type="hidden" name="action" value="dev_apt_import" />
         <input type="file" name="import_file" accept=".csv,.xlsx" required />
-        <label style="margin-left:10px"><input type="radio" name="mode" value="dry" checked> <?php _e('Dry‑run (len náhľad)','developer-apartments');?></label>
-        <label style="margin-left:10px"><input type="radio" name="mode" value="commit"> <?php _e('Importovať','developer-apartments');?></label>
-        <?php submit_button(__('Spustiť import','developer-apartments'), 'secondary', 'submit', false, ['style'=>'margin-left:10px']); ?>
-        <p class="description"><?php _e('XLSX import podporuje inline strings aj sharedStrings. CSV môže mať desatinné čiarky (budú znormalizované).','developer-apartments');?></p>
+        <label style="margin-left:10px"><input type="radio" name="mode" value="dry" checked> <?php _e( 'Dry‑run (len náhľad)', 'developer-apartments' ); ?></label>
+        <label style="margin-left:10px"><input type="radio" name="mode" value="commit"> <?php _e( 'Importovať', 'developer-apartments' ); ?></label>
+        <?php submit_button( __( 'Spustiť import', 'developer-apartments' ), 'secondary', 'submit', false, [ 'style' => 'margin-left:10px' ] ); ?>
+        <p class="description"><?php _e( 'XLSX import podporuje inline strings aj sharedStrings. CSV môže mať desatinné čiarky (budú znormalizované).', 'developer-apartments' ); ?></p>
     </form>
+    <?php
+}
 
-    <hr/>
+function dev_apt_render_tab_pricing() {
+    $base_url = add_query_arg( [ 'post_type' => 'apartment', 'page' => 'dev-apt-settings', 'tab' => 'pricing' ], admin_url( 'edit.php' ) );
+    ?>
+    <h2><?php _e( 'Ceny & Statusy – rýchly export/import', 'developer-apartments' ); ?></h2>
+    <p class="description"><?php _e( 'Export: stĺpce apartment_code, ID, slug, title, status_slug, price_list, price_discount, price_presale. Import prepíše status a všetky tri ceny 1:1 podľa súboru (prázdna bunka = vymazať hodnotu).', 'developer-apartments' ); ?></p>
 
-    <h2><?php _e('Ceny & Statusy – rýchly export/import','developer-apartments');?></h2>
-    <form method="post" action="<?php echo esc_url( admin_url('admin-post.php') ); ?>" style="margin-bottom:8px;">
-        <?php wp_nonce_field('dev_apt_export_pricing'); ?>
+    <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-bottom:16px;">
+        <?php wp_nonce_field( 'dev_apt_export_pricing' ); ?>
         <input type="hidden" name="action" value="dev_apt_export_pricing" />
         <fieldset style="margin:8px 0;padding:8px;border:1px solid #ddd;">
-            <legend><?php _e('Filtre','developer-apartments'); ?></legend>
-            <label><?php _e('Status','developer-apartments'); ?>:
+            <legend><?php _e( 'Filtre', 'developer-apartments' ); ?></legend>
+            <label><?php _e( 'Status', 'developer-apartments' ); ?>:
                 <select name="filter_status">
-                    <option value="">— <?php _e('všetko','developer-apartments'); ?> —</option>
-                    <?php $sts = get_terms(array('taxonomy'=>'apartment_status','hide_empty'=>false)); if(!is_wp_error($sts)) foreach($sts as $t){ echo '<option value="'.esc_attr($t->slug).'">'.esc_html($t->name).'</option>'; } ?>
+                    <option value="">— <?php _e( 'všetko', 'developer-apartments' ); ?> —</option>
+                    <?php $sts = get_terms( array( 'taxonomy' => 'apartment_status', 'hide_empty' => false ) ); if ( ! is_wp_error( $sts ) ) foreach ( $sts as $t ) { echo '<option value="' . esc_attr( $t->slug ) . '">' . esc_html( $t->name ) . '</option>'; } ?>
                 </select>
             </label>
-            <label style="margin-left:12px;"><?php _e('Štruktúra','developer-apartments'); ?>:
+            <label style="margin-left:12px;"><?php _e( 'Štruktúra', 'developer-apartments' ); ?>:
                 <select name="filter_structure">
-                    <option value="">— <?php _e('všetko','developer-apartments'); ?> —</option>
-                    <?php $ps = get_terms(array('taxonomy'=>'project_structure','hide_empty'=>false)); if(!is_wp_error($ps)) foreach($ps as $t){ echo '<option value="'.esc_attr($t->term_id).'">'.esc_html($t->name).'</option>'; } ?>
+                    <option value="">— <?php _e( 'všetko', 'developer-apartments' ); ?> —</option>
+                    <?php $ps = get_terms( array( 'taxonomy' => 'project_structure', 'hide_empty' => false ) ); if ( ! is_wp_error( $ps ) ) foreach ( $ps as $t ) { echo '<option value="' . esc_attr( $t->term_id ) . '">' . esc_html( $t->name ) . '</option>'; } ?>
                 </select>
             </label>
         </fieldset>
         <label><input type="radio" name="format" value="csv" checked> CSV</label>
         <label style="margin-left:10px"><input type="radio" name="format" value="xlsx"> XLSX</label>
-        <?php submit_button(__('Stiahnuť ceny & statusy','developer-apartments'), 'primary', 'submit', false, ['style'=>'margin-left:10px']); ?>
+        <?php submit_button( __( 'Stiahnuť ceny & statusy', 'developer-apartments' ), 'primary', 'submit', false, [ 'style' => 'margin-left:10px' ] ); ?>
     </form>
 
-    <form method="post" action="<?php echo esc_url( admin_url('admin-post.php') ); ?>" enctype="multipart/form-data">
-        <?php wp_nonce_field('dev_apt_import_pricing'); ?>
+    <h3><?php _e( 'Import z počítača', 'developer-apartments' ); ?></h3>
+    <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data" style="margin-bottom:16px;">
+        <?php wp_nonce_field( 'dev_apt_import_pricing' ); ?>
         <input type="hidden" name="action" value="dev_apt_import_pricing" />
-        <input type="file" name="import_file" accept=".csv,.xlsx" required />
-        <label style="margin-left:10px"><input type="radio" name="mode" value="dry" checked> <?php _e('Dry‑run (len náhľad)','developer-apartments');?></label>
-        <label style="margin-left:10px"><input type="radio" name="mode" value="commit"> <?php _e('Importovať','developer-apartments');?></label>
-        <?php submit_button(__('Importovať ceny & statusy','developer-apartments'), 'secondary', 'submit', false, ['style'=>'margin-left:10px']); ?>
+        <input type="file" name="import_file" accept=".csv,.xlsx" />
+        <label style="margin-left:10px"><input type="radio" name="mode" value="dry" checked> <?php _e( 'Dry‑run (len náhľad)', 'developer-apartments' ); ?></label>
+        <label style="margin-left:10px"><input type="radio" name="mode" value="commit"> <?php _e( 'Importovať', 'developer-apartments' ); ?></label>
+        <?php submit_button( __( 'Importovať ceny & statusy', 'developer-apartments' ), 'secondary', 'submit', false, [ 'style' => 'margin-left:10px' ] ); ?>
     </form>
 
-    <?php dev_apt_render_polygons_export_section(); ?>
+    <h3><?php _e( 'Import z URL (HTTP/HTTPS)', 'developer-apartments' ); ?></h3>
+    <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+        <?php wp_nonce_field( 'dev_apt_import_pricing' ); ?>
+        <input type="hidden" name="action" value="dev_apt_import_pricing" />
+        <p>
+            <label for="dev_apt_import_url"><?php _e( 'URL súboru (CSV alebo XLSX):', 'developer-apartments' ); ?></label><br/>
+            <input type="url" id="dev_apt_import_url" name="import_url" class="large-text" placeholder="https://example.com/ceny.csv" style="max-width:600px;" />
+        </p>
+        <label><input type="radio" name="mode" value="dry" checked> <?php _e( 'Dry‑run (len náhľad)', 'developer-apartments' ); ?></label>
+        <label style="margin-left:10px"><input type="radio" name="mode" value="commit"> <?php _e( 'Importovať', 'developer-apartments' ); ?></label>
+        <?php submit_button( __( 'Stiahnuť a importovať', 'developer-apartments' ), 'secondary', 'submit', false, [ 'style' => 'margin-left:10px' ] ); ?>
+    </form>
 
-</div>
-<?php }
+    <h3><?php _e( 'Import z FTP', 'developer-apartments' ); ?></h3>
+    <p class="description"><?php _e( 'Samostatné polia pre pripojenie. Po úspešnom importe sa súbor na FTP vymaže. Ak je cesta adresár, použije sa najnovší súbor .csv alebo .xlsx.', 'developer-apartments' ); ?></p>
+    <form method="post" action="options.php" style="margin-bottom:16px;">
+        <?php settings_fields( 'dev_apt_ftp_options' ); ?>
+        <?php $ftp = dev_apt_get_ftp_options(); ?>
+        <table class="form-table" role="presentation">
+            <tr>
+                <th scope="row"><label for="dev_apt_ftp_host"><?php _e( 'FTP server', 'developer-apartments' ); ?></label></th>
+                <td><input type="text" id="dev_apt_ftp_host" name="<?php echo esc_attr( DEV_APT_FTP_OPTION ); ?>[host]" value="<?php echo esc_attr( $ftp['host'] ); ?>" class="regular-text" placeholder="ftp.example.com" /></td>
+            </tr>
+            <tr>
+                <th scope="row"><label for="dev_apt_ftp_user"><?php _e( 'Používateľské meno', 'developer-apartments' ); ?></label></th>
+                <td><input type="text" id="dev_apt_ftp_user" name="<?php echo esc_attr( DEV_APT_FTP_OPTION ); ?>[user]" value="<?php echo esc_attr( $ftp['user'] ); ?>" class="regular-text" autocomplete="off" /></td>
+            </tr>
+            <tr>
+                <th scope="row"><label for="dev_apt_ftp_pass"><?php _e( 'Heslo', 'developer-apartments' ); ?></label></th>
+                <td><input type="password" id="dev_apt_ftp_pass" name="<?php echo esc_attr( DEV_APT_FTP_OPTION ); ?>[pass]" value="" class="regular-text" autocomplete="new-password" placeholder="<?php echo $ftp['pass'] !== '' ? '••••••••' : ''; ?>" />
+                    <p class="description"><?php _e( 'Nechajte prázdne, ak nemeníte.', 'developer-apartments' ); ?></p>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row"><label for="dev_apt_ftp_path"><?php _e( 'Cesta', 'developer-apartments' ); ?></label></th>
+                <td>
+                    <input type="text" id="dev_apt_ftp_path" name="<?php echo esc_attr( DEV_APT_FTP_OPTION ); ?>[path]" value="<?php echo esc_attr( $ftp['path'] ); ?>" class="large-text" placeholder="/export/ alebo /export/ceny.csv" style="max-width:400px;" />
+                    <p class="description"><?php _e( 'Adresár (nájde najnovší .csv/.xlsx) alebo celá cesta k súboru.', 'developer-apartments' ); ?></p>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row"><?php _e( 'Automatická kontrola', 'developer-apartments' ); ?></th>
+                <td>
+                    <label><input type="checkbox" name="<?php echo esc_attr( DEV_APT_FTP_OPTION ); ?>[auto_enabled]" value="1" <?php checked( $ftp['auto_enabled'], 1 ); ?> /> <?php _e( 'Zapnúť automatickú kontrolu: nájde nový súbor, importuje a vymaže z FTP', 'developer-apartments' ); ?></label>
+                    <p class="description" style="margin-top:6px;">
+                        <label><?php _e( 'Interval:', 'developer-apartments' ); ?></label>
+                        <select name="<?php echo esc_attr( DEV_APT_FTP_OPTION ); ?>[auto_interval]">
+                            <option value="900" <?php selected( $ftp['auto_interval'], 900 ); ?>><?php _e( 'Každých 15 minút', 'developer-apartments' ); ?></option>
+                            <option value="3600" <?php selected( $ftp['auto_interval'], 3600 ); ?>><?php _e( 'Každú hodinu', 'developer-apartments' ); ?></option>
+                            <option value="21600" <?php selected( $ftp['auto_interval'], 21600 ); ?>><?php _e( 'Každých 6 hodín', 'developer-apartments' ); ?></option>
+                        </select>
+                    </p>
+                </td>
+            </tr>
+        </table>
+        <?php submit_button( __( 'Uložiť FTP nastavenia', 'developer-apartments' ), 'primary', 'submit', false ); ?>
+    </form>
+    <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-bottom:16px;">
+        <?php wp_nonce_field( 'dev_apt_import_pricing_ftp' ); ?>
+        <input type="hidden" name="action" value="dev_apt_import_pricing_ftp" />
+        <?php submit_button( __( 'Skontrolovať FTP a importovať teraz', 'developer-apartments' ), 'secondary', 'submit', false ); ?>
+        <span class="description" style="margin-left:8px;"><?php _e( 'Stiahne súbor z FTP, spracuje import a súbor na FTP vymaže.', 'developer-apartments' ); ?></span>
+    </form>
+    <?php
+}

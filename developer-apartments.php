@@ -34,6 +34,7 @@ class Developer_Apartments_Core {
 
         if ( file_exists( DEV_APT_PATH . 'includes/helpers.php' ) )     require_once DEV_APT_PATH . 'includes/helpers.php';
         if ( file_exists( DEV_APT_PATH . 'includes/shortcodes.php' ) )  require_once DEV_APT_PATH . 'includes/shortcodes.php';
+        if ( file_exists( DEV_APT_PATH . 'includes/integrations/cache-purge.php' ) ) require_once DEV_APT_PATH . 'includes/integrations/cache-purge.php';
 
         // Divi
         require_once DEV_APT_PATH . 'includes/divi-loader.php';
@@ -42,6 +43,8 @@ class Developer_Apartments_Core {
         }
 
         if ( is_admin() ){
+            require_once DEV_APT_PATH . 'includes/admin/capabilities.php';
+            require_once DEV_APT_PATH . 'includes/admin/pricing-editor-restrict.php';
             // Admin pages/boxes
             foreach(['settings.php','quick-status.php','list-table.php','meta-box-single-tax.php'] as $file){
                 $p = DEV_APT_PATH.'includes/admin/'.$file;
@@ -91,6 +94,12 @@ class Developer_Apartments_Core {
 function dev_apt_activate(){
     require_once DEV_APT_PATH . 'includes/cpt-apartment.php';
     require_once DEV_APT_PATH . 'includes/taxonomies.php';
+    if ( file_exists( DEV_APT_PATH . 'includes/admin/capabilities.php' ) ) {
+        require_once DEV_APT_PATH . 'includes/admin/capabilities.php';
+        if ( function_exists( 'dev_apt_install_roles_and_caps' ) ) {
+            dev_apt_install_roles_and_caps();
+        }
+    }
     flush_rewrite_rules();
 }
 function dev_apt_deactivate(){ flush_rewrite_rules(); }

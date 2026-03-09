@@ -3,7 +3,7 @@ if ( ! defined('ABSPATH') ) exit;
 
 /**
  * Export polygonov (dev_map_data) z term meta project_structure.
- * Integrované do Nastavení – export všetkých termínov alebo jednotlivo podľa výberu.
+ * Integrované do Nastavení – export všetkých poligónov alebo jednotlivo podľa výberu.
  * Nič nemení v databáze.
  */
 
@@ -90,16 +90,16 @@ add_action( 'admin_post_dev_apt_poly_export_csv', function () {
     exit;
 } );
 
-/** Export jedného termínu – JSON (dev_map_data + metadáta). */
+/** Export jedného polygónu – JSON (dev_map_data + metadáta). */
 add_action( 'admin_post_dev_apt_poly_export_single', function () {
     if ( ! current_user_can( 'manage_options' ) ) wp_die( 'forbidden' );
     check_admin_referer( 'dev_apt_poly_export_single' );
     $term_id = isset( $_POST['term_id'] ) ? absint( $_POST['term_id'] ) : 0;
-    if ( ! $term_id ) wp_die( __( 'Vyberte termín (poschodie / mapu).', 'developer-apartments' ) );
+    if ( ! $term_id ) wp_die( __( 'Vyberte objekt (poschodie / mapu).', 'developer-apartments' ) );
 
     $rows = dev_apt_poly_collect( $term_id );
     if ( empty( $rows ) ) {
-        wp_die( __( 'Zvolený termín neexistuje alebo nemá dáta.', 'developer-apartments' ) );
+        wp_die( __( 'Zvolený objekt neexistuje alebo nemá dáta.', 'developer-apartments' ) );
     }
     $row = $rows[0];
     $payload = array(
@@ -146,26 +146,26 @@ function dev_apt_render_polygons_export_section() {
     <h2><?php _e( 'Export polygonov (mapy)', 'developer-apartments' ); ?></h2>
     <p class="description"><?php _e( 'Záloha polí dev_map_data a dev_floor_plan_id pre taxonómiu project_structure. Nič sa v databáze nemení.', 'developer-apartments' ); ?></p>
     <ul style="margin: 8px 0;">
-        <li><?php printf( __( 'Počet termínov: %s', 'developer-apartments' ), '<strong>' . (int) $total_terms . '</strong>' ); ?></li>
-        <li><?php printf( __( 'Termíny s dátami: %s', 'developer-apartments' ), '<strong>' . (int) $total_with_data . '</strong>' ); ?></li>
+        <li><?php printf( __( 'Počet objektov: %s', 'developer-apartments' ), '<strong>' . (int) $total_terms . '</strong>' ); ?></li>
+        <li><?php printf( __( 'Objekty s dátami: %s', 'developer-apartments' ), '<strong>' . (int) $total_with_data . '</strong>' ); ?></li>
         <li><?php printf( __( 'Súhrnný počet polygonov: %s', 'developer-apartments' ), '<strong>' . (int) $total_shapes . '</strong>' ); ?></li>
     </ul>
 
-    <h3><?php _e( 'Export všetkých termínov', 'developer-apartments' ); ?></h3>
+    <h3><?php _e( 'Export všetkých poligónov', 'developer-apartments' ); ?></h3>
     <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin: 12px 0;">
         <?php wp_nonce_field( 'dev_apt_poly_export_json' ); ?>
         <input type="hidden" name="action" value="dev_apt_poly_export_json" />
         <?php submit_button( __( 'Stiahnuť JSON zálohu (všetky)', 'developer-apartments' ), 'primary', 'submit', false ); ?>
-        <span class="description" style="margin-left:8px;"><?php _e( 'Raw dev_map_data pre každý termín + metadáta.', 'developer-apartments' ); ?></span>
+        <span class="description" style="margin-left:8px;"><?php _e( 'Raw dev_map_data pre každý polygón + metadáta.', 'developer-apartments' ); ?></span>
     </form>
     <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin: 12px 0;">
         <?php wp_nonce_field( 'dev_apt_poly_export_csv' ); ?>
         <input type="hidden" name="action" value="dev_apt_poly_export_csv" />
         <?php submit_button( __( 'Stiahnuť CSV sumár (všetky)', 'developer-apartments' ), 'secondary', 'submit', false ); ?>
-        <span class="description" style="margin-left:8px;"><?php _e( 'Prehľad: term_id, názov, slug, počet polygonov, image_id, image_url.', 'developer-apartments' ); ?></span>
+        <span class="description" style="margin-left:8px;"><?php _e( 'Prehľad: ID objektu, názov, slug, počet polygonov, image_id, image_url.', 'developer-apartments' ); ?></span>
     </form>
 
-    <h3><?php _e( 'Export jedného termínu', 'developer-apartments' ); ?></h3>
+    <h3><?php _e( 'Export jedného polygónu', 'developer-apartments' ); ?></h3>
     <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin: 12px 0;">
         <?php wp_nonce_field( 'dev_apt_poly_export_single' ); ?>
         <input type="hidden" name="action" value="dev_apt_poly_export_single" />
@@ -186,14 +186,14 @@ function dev_apt_render_polygons_export_section() {
             }
             ?>
         </select>
-        <?php submit_button( __( 'Stiahnuť JSON (vybraný termín)', 'developer-apartments' ), 'secondary', 'submit', false ); ?>
+        <?php submit_button( __( 'Stiahnuť JSON (vybraný polygón)', 'developer-apartments' ), 'secondary', 'submit', false ); ?>
     </form>
 
     <h3><?php _e( 'Náhľad', 'developer-apartments' ); ?></h3>
     <table class="widefat striped" style="max-width: 960px;">
         <thead>
             <tr>
-                <th>term_id</th>
+                <th><?php _e( 'ID objektu', 'developer-apartments' ); ?></th>
                 <th><?php _e( 'Názov', 'developer-apartments' ); ?></th>
                 <th>Slug</th>
                 <th><?php _e( 'Polygóny', 'developer-apartments' ); ?></th>
