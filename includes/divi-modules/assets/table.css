@@ -14,3 +14,175 @@
 .dev-apartment-table-wrapper{overflow-x:auto}
 .dev-apartment-table-wrapper table.dev-table{min-width:720px}
 @media (max-width:767px){.dev-apartment-table-wrapper table.dev-table{min-width:600px}}
+
+/* Ikona galérie vedľa názvu bytu – zarovnanie v rámci bunky, bez zmeny výšky riadku */
+.dev-apartment-table-wrapper .dev-table tbody td:first-child{vertical-align:middle}
+.dev-apartment-table-wrapper .dev-table-title-cell{display:inline-flex;align-items:center;flex-wrap:wrap;gap:0 8px}
+.dev-apartment-table-wrapper .dev-table-gallery-icon{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;line-height:0;cursor:pointer;opacity:.85}
+.dev-apartment-table-wrapper .dev-table-gallery-icon:hover{opacity:1}
+.dev-apartment-table-wrapper .dev-table-gallery-icon img{display:block;width:20px;height:20px;object-fit:contain}
+
+/* Lightbox galérie – zosúladené so štýlom galérie na stránke bytu (Divi/Magnific) */
+.dev-gallery-lightbox,
+body > .dev-gallery-lightbox{
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  z-index:2147483647;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  -webkit-overflow-scrolling:touch;
+  overflow:auto;
+  transform:translateZ(0);
+}
+.dev-gallery-lightbox .dev-gallery-lb-backdrop,
+body > .dev-gallery-lightbox .dev-gallery-lb-backdrop{
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  background:rgba(11,11,11,0.8);
+  cursor:pointer;
+  z-index:1;
+}
+.dev-gallery-lightbox .dev-gallery-lb-inner,
+body > .dev-gallery-lightbox .dev-gallery-lb-inner{
+  position:relative;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  max-width:calc(100vw - 32px);
+  max-height:calc(100vh - 32px);
+  padding:16px;
+  box-sizing:border-box;
+}
+.dev-gallery-lightbox .dev-gallery-lb-content,
+body > .dev-gallery-lightbox .dev-gallery-lb-content{
+  position:relative;
+  background:transparent;
+  border:none;
+  box-shadow:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  max-width:100%;
+  max-height:100%;
+  padding:0;
+  box-sizing:border-box;
+}
+.dev-gallery-lightbox .dev-gallery-lb-img,
+body > .dev-gallery-lightbox .dev-gallery-lb-img{
+  max-width:100%;
+  max-height:calc(100vh - 80px);
+  width:auto;
+  height:auto;
+  object-fit:contain;
+  display:block;
+  transition:opacity .2s ease;
+}
+.dev-gallery-lightbox .dev-gallery-lb-prev,
+.dev-gallery-lightbox .dev-gallery-lb-next,
+body > .dev-gallery-lightbox .dev-gallery-lb-prev,
+body > .dev-gallery-lightbox .dev-gallery-lb-next{
+  position:fixed;
+  top:50%;
+  transform:translateY(-50%);
+  width:64px;
+  height:64px;
+  padding:0;
+  border:none;
+  background:transparent;
+  color:#fff;
+  font-size:64px;
+  font-weight:400;
+  line-height:1;
+  cursor:pointer;
+  z-index:2147483646;
+  transition:opacity .2s;
+}
+.dev-gallery-lightbox .dev-gallery-lb-prev,
+body > .dev-gallery-lightbox .dev-gallery-lb-prev{left:20px}
+.dev-gallery-lightbox .dev-gallery-lb-next,
+body > .dev-gallery-lightbox .dev-gallery-lb-next{right:20px}
+.dev-gallery-lightbox .dev-gallery-lb-close,
+body > .dev-gallery-lightbox .dev-gallery-lb-close{
+  position:absolute;
+  top:8px;
+  right:8px;
+  z-index:4;
+  width:64px;
+  height:64px;
+  padding:0;
+  border:none;
+  background:transparent;
+  color:#fff;
+  font-size:64px;
+  font-family:Open Sans,Arial,sans-serif;
+  font-weight:200;
+  line-height:1;
+  cursor:pointer;
+  opacity:0.2;
+  transition:opacity .2s;
+}
+.dev-gallery-lightbox .dev-gallery-lb-close:hover,
+body > .dev-gallery-lightbox .dev-gallery-lb-close:hover{opacity:1}
+.dev-gallery-lightbox .dev-gallery-lb-counter,
+body > .dev-gallery-lightbox .dev-gallery-lb-counter{
+  position:absolute;
+  bottom:8px;
+  right:12px;
+  font-size:13px;
+  color:#555;
+  z-index:4;
+}
+@media (max-width:767px){
+  .dev-gallery-lightbox .dev-gallery-lb-prev,
+  .dev-gallery-lightbox .dev-gallery-lb-next,
+  body > .dev-gallery-lightbox .dev-gallery-lb-prev,
+  body > .dev-gallery-lightbox .dev-gallery-lb-next{
+    width:48px;
+    height:48px;
+    font-size:36px;
+  }
+  .dev-gallery-lightbox .dev-gallery-lb-content,
+  body > .dev-gallery-lightbox .dev-gallery-lb-content{
+    padding:44px 12px 24px;
+  }
+  .dev-gallery-lightbox .dev-gallery-lb-close,
+  body > .dev-gallery-lightbox .dev-gallery-lb-close{
+    top:6px;
+    right:6px;
+    width:32px;
+    height:32px;
+    font-size:20px;
+  }
+  .dev-gallery-lightbox .dev-gallery-lb-counter,
+  body > .dev-gallery-lightbox .dev-gallery-lb-counter{
+    font-size:12px;
+    bottom:6px;
+    right:10px;
+  }
+}
+
+/* Divi / Magnific Popup lightbox – zosúladenie so štýlom galérie */
+.mfp-arrow-left:after,
+.mfp-arrow-right:after{
+  font-size:64px;
+  font-weight:400;
+  color:#fff;
+  border:none;
+  margin:0;
+}
+.mfp-arrow-left{background:transparent !important}
+.mfp-arrow-right{background:transparent !important}
+.mfp-close{
+  font-size:64px;
+  font-family:Open Sans,Arial,sans-serif;
+  font-weight:200;
+  color:#fff;
+  opacity:0.2;
+  background:transparent !important;
+  border:none;
+  width:64px;
+  height:64px;
+}
+.mfp-close:hover{opacity:1}

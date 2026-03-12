@@ -3,7 +3,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class DEV_Featured_Image_Module extends ET_Builder_Module {
     public $slug       = 'dev_apt_featured_image';
-    public $vb_support = 'on';
+    public $vb_support = 'partial';
 
     public function init(){
         $this->name = 'Náhľadový obrázok bytu';

@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 class DEV_Gallery_Module extends ET_Builder_Module {
 
     public $slug       = 'dev_apt_gallery';
-    public $vb_support = 'on';
+    public $vb_support = 'partial';
 
     public function init(){
         $this->name = 'Galéria bytu';

@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 class DEV_Floorplan_Button_Module extends ET_Builder_Module {
 
     public $slug       = 'dev_floorplan_button';
-    public $vb_support = 'on';
+    public $vb_support = 'partial';
 
     public function init(){
         $this->name = 'Tlačidlo pôdorys';
@@ -148,7 +148,7 @@ class DEV_Floorplan_Button_Module extends ET_Builder_Module {
         $url = wp_get_attachment_url($file_id);
         if(!$url) return '';
 
-        $wrap_style = 'text-align:'.esc_attr($align).';';
+        $wrap_style = 'text-align:'.esc_attr($align).';margin-right:12px;';
         $resp_css = '';
         if ( $align_t !== $align ) {
             $resp_css .= '@media(max-width:980px){#'.esc_attr($uid).'{text-align:'.esc_attr($align_t).'}}';

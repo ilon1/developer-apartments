@@ -1,0 +1,14 @@
+/**
+ * Medzera medzi tlačidlami „Podrobný pôdorys“ a „Mám záujem“ v rovnakom riadku/stĺpci.
+ * Používa :has() – funguje v moderných prehliadačoch.
+ */
+.et_pb_row:has(.dev-apt-btn-wrap):has(.dev-apt-contact-module) .dev-apt-contact-module,
+.et_pb_column:has(.dev-apt-btn-wrap):has(.dev-apt-contact-module) .dev-apt-contact-module,
+.et_pb_section:has(.dev-apt-btn-wrap):has(.dev-apt-contact-module) .dev-apt-contact-module {
+  margin-left: 12px !important;
+}
+.et_pb_row:has(.dev-apt-btn-wrap):has(.dev-apt-contact-module) .dev-apt-btn-wrap,
+.et_pb_column:has(.dev-apt-btn-wrap):has(.dev-apt-contact-module) .dev-apt-btn-wrap,
+.et_pb_section:has(.dev-apt-btn-wrap):has(.dev-apt-contact-module) .dev-apt-btn-wrap {
+  margin-right: 12px !important;
+}

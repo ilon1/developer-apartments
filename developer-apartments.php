@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Developer Apartments
  * Description: Komplexné riešenie pre predaj bytov (CPT, taxonómie, Divi moduly, Map Editor, Export/Import).
- * Version: 2.2.1
+ * Version: 2.2.4
  * Author: Ján Lakanda
  * Text Domain: developer-apartments
  * Domain Path: /languages
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 if ( ! defined('DEV_APT_PATH') ) define( 'DEV_APT_PATH', plugin_dir_path( __FILE__ ) );
 if ( ! defined('DEV_APT_URL') )  define( 'DEV_APT_URL',  plugin_dir_url( __FILE__ ) );
-if ( ! defined('DEV_APT_VERSION') ) define( 'DEV_APT_VERSION', '2.2.1' );
+if ( ! defined('DEV_APT_VERSION') ) define( 'DEV_APT_VERSION', '2.2.4' );
 
 class Developer_Apartments_Core {
 

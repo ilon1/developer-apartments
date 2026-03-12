@@ -3,7 +3,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class DEV_Single_Stats_Module extends ET_Builder_Module {
     public $slug       = 'dev_apt_single_stats';
-    public $vb_support = 'on';
+    public $vb_support = 'partial';
 
     /** Predvolené kľúče a názvy polí (pre zapínanie a vlastné názvy) */
     private static function get_default_items(){

@@ -39,6 +39,7 @@ function dev_apt_default_options(){
         'csv_delimiter'              => ';',     // ; , \t
         'csv_decimal_comma'          => 1,       // CSV: zapisovať čísla s čiarkou
         'free_status_slug'           => 'volny',
+        'vat_percent'                => 23,      // DPH v percentách pre výpočet ceny bez DPH
         'uninstall_delete_posts'     => 0,
         'uninstall_delete_terms'     => 0,
         'uninstall_delete_term_meta' => 0,
@@ -78,6 +79,12 @@ function dev_apt_sanitize_options($in){
     $o['csv_decimal_comma'] = !empty($in['csv_decimal_comma']) ? 1 : 0;
     $o['free_status_slug']  = sanitize_title($in['free_status_slug'] ?? 'volny');
 
+    // DPH percento – jednoduché číslo 0–100 (môže byť aj desatinné, napr. 23.5)
+    $vat = isset($in['vat_percent']) ? floatval($in['vat_percent']) : 23.0;
+    if ($vat < 0)   $vat = 0;
+    if ($vat > 100) $vat = 100;
+    $o['vat_percent'] = $vat;
+
     $ttl = isset($in['cache_ttl']) ? intval($in['cache_ttl']) : 3600;
     $allowed_ttl = array(0,600,1800,3600,21600,43200);
     if ( !in_array($ttl,$allowed_ttl,true) ) $ttl = 3600;
@@ -91,6 +98,17 @@ function dev_apt_sanitize_options($in){
     $o['import_create_status'] = $status;
 
     return $o;
+}
+
+/**
+ * Vráti nastavenú sadzbu DPH v percentách (0–100). Štandardne 23 %.
+ */
+function dev_apt_get_vat_rate(){
+    $opts = dev_apt_get_options();
+    $vat  = isset($opts['vat_percent']) ? floatval($opts['vat_percent']) : 23.0;
+    if ($vat < 0)   $vat = 0;
+    if ($vat > 100) $vat = 100;
+    return $vat;
 }
 
 /* ========================= EXPORT DATA HELPERS ========================= */
@@ -978,6 +996,7 @@ function dev_apt_render_tab_general( $o, $delims, $ttl_opts ) {
             <tr><td><code>[dev_apt_structure_breadcrumb]</code></td><td>Breadcrumb zo štruktúry projektu</td></tr>
             <tr><td><code>[dev_apt_featured_image]</code></td><td>Náhľadový obrázok bytu (fallback pre et_pb_post_featured_image)</td></tr>
             <tr><td><code>[dev_apt_price]</code></td><td>Cena s logikou: predpredaj → zvýhodnená → list → Na vyžiadanie</td></tr>
+            <tr><td><code>[dev_apt_price_ex_vat]</code></td><td>Cena bez DPH podľa nastaveného percenta DPH (predvolene 23&nbsp;%)</td></tr>
             <tr><td><code>[dev_apt_cellar]</code></td><td>Pivnica: „Áno“ alebo výmera m²</td></tr>
             <tr><td><code>[dev_apt_floor]</code></td><td>Podlažie (najnižší term project_structure)</td></tr>
             <tr><td><code>[dev_apt_single_stats]</code></td><td>Všetky štatistiky naraz. Parametre: <code>layout="blocks"</code> (predvolene) alebo <code>layout="inline"</code></td></tr>
@@ -1012,6 +1031,13 @@ function dev_apt_render_tab_general( $o, $delims, $ttl_opts ) {
             <tr>
                 <th scope="row"><label><?php _e( 'Slug statusu „Voľný“', 'developer-apartments' ); ?></label></th>
                 <td><input type="text" name="dev_apt_options[free_status_slug]" value="<?php echo esc_attr( $o['free_status_slug'] ); ?>" /></td>
+            </tr>
+            <tr>
+                <th scope="row"><label><?php _e( 'DPH pre výpočet ceny bez DPH (%)', 'developer-apartments' ); ?></label></th>
+                <td>
+                    <input type="number" step="0.1" min="0" max="100" name="dev_apt_options[vat_percent]" value="<?php echo esc_attr( isset( $o['vat_percent'] ) ? $o['vat_percent'] : 23 ); ?>" style="width:80px;" />
+                    <p class="description"><?php _e( 'Používa sa pri výpočte poľa „Cena bez DPH“ (tabuľka a shortcode). Štandardne 23 %.', 'developer-apartments' ); ?></p>
+                </td>
             </tr>
             <tr>
                 <th scope="row"><label><?php _e( 'TTL cache (free_count)', 'developer-apartments' ); ?></label></th>

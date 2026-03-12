@@ -3,8 +3,9 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class DEV_Table_Module_V2 extends ET_Builder_Module {
 
-    public $slug = 'dev_apartment_table_v2';
-    public $vb_support = 'on';
+    public $slug       = 'dev_apartment_table_v2';
+    /** partial = náhľad cez AJAX (bez React), odstráni hlášku o nekompatibilite; on by vyžadoval JSX */
+    public $vb_support = 'partial';
 
     public function init(){
         $this->name = 'Tabuľka Bytov (v2)';
@@ -107,6 +108,15 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
                 'toggle_slug'=>'columns'
             ),
 
+            'show_col_price_net'  => array(
+                'label'=>'Zobraziť stĺpec: Cena bez DPH',
+                'type'=>'yes_no_button',
+                'options'=>array('on'=>'Áno','off'=>'Nie'),
+                'default'=>'off',
+                'tab_slug'=>'general',
+                'toggle_slug'=>'columns'
+            ),
+
             // ========== LABELS ==========
             'label_col_flat'   => array(
                 'label'=>'Názov stĺpca: Byt',
@@ -160,6 +170,14 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
                 'label'=>'Názov stĺpca: Status',
                 'type'=>'text',
                 'default'=>'Status',
+                'tab_slug'=>'general',
+                'toggle_slug'=>'labels'
+            ),
+
+            'label_col_price_net'  => array(
+                'label'=>'Názov stĺpca: Cena bez DPH',
+                'type'=>'text',
+                'default'=>'Cena bez DPH',
                 'tab_slug'=>'general',
                 'toggle_slug'=>'labels'
             ),
@@ -290,6 +308,24 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
                 'tab_slug'=>'general',
                 'toggle_slug'=>'behavior'
             ),
+
+            'show_gallery_icon' => array(
+                'label'=>'Ikona galérie pri názve bytu',
+                'type'=>'yes_no_button',
+                'options'=>array('on'=>'Áno','off'=>'Nie'),
+                'default'=>'on',
+                'description'=>'Zobrazí ikonu galérie vedľa názvu len u bytov s galériou. Klik otvorí galériu v lightboxe.',
+                'tab_slug'=>'general',
+                'toggle_slug'=>'behavior'
+            ),
+            'gallery_icon_url' => array(
+                'label'=>'URL ikony galérie (SVG/obrázok)',
+                'type'=>'text',
+                'default'=>'https://www.rezidenciaprsianska.sk/wp-content/uploads/2026/03/galeria.svg',
+                'description'=>'Vlastná ikona pre odkaz na galériu. Prázdne = ikona sa nezobrazí.',
+                'tab_slug'=>'general',
+                'toggle_slug'=>'behavior'
+            ),
         );
     }
 
@@ -318,11 +354,12 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
     }
 
     private function builder_preview(){
-        $v_ext  = ($this->props['show_col_ext']     === 'on');
-        $v_cell = ($this->props['show_col_cellar']  === 'on');
-        $v_tot  = ($this->props['show_col_total']   === 'on');
-        $v_pr   = ($this->props['show_col_price']   === 'on');
-        $v_st   = ($this->props['show_col_status']  === 'on');
+        $v_ext   = ($this->props['show_col_ext']     === 'on');
+        $v_cell  = ($this->props['show_col_cellar']  === 'on');
+        $v_tot   = ($this->props['show_col_total']   === 'on');
+        $v_pr    = ($this->props['show_col_price']   === 'on');
+        $v_st    = ($this->props['show_col_status']  === 'on');
+        $v_prnet = ($this->props['show_col_price_net'] === 'on');
 
         $L_flat = $this->props['label_col_flat'];
         $L_int  = $this->props['label_col_int'];
@@ -331,6 +368,7 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
         $L_tot  = $this->props['label_col_total'];
         $L_pr   = $this->props['label_col_price'];
         $L_st   = $this->props['label_col_status'];
+        $L_prnet= $this->props['label_col_price_net'];
 
         ob_start(); ?>
         <div class="et_pb_module et_pb_dev_apartment_table_v2 dev-apartment-table-wrapper dev-builder-preview" data-et-pb-module-slug="<?php echo esc_attr( $this->slug ); ?>">
@@ -338,11 +376,12 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
                 <thead><tr>
                     <th><?php echo esc_html($L_flat); ?></th>
                     <th><?php echo esc_html($L_int); ?></th>
-                    <?php if($v_ext):  ?><th><?php echo esc_html($L_ext);  ?></th><?php endif; ?>
-                    <?php if($v_cell): ?><th><?php echo esc_html($L_cell); ?></th><?php endif; ?>
-                    <?php if($v_tot):  ?><th><?php echo esc_html($L_tot);  ?></th><?php endif; ?>
-                    <?php if($v_pr):   ?><th><?php echo esc_html($L_pr);   ?></th><?php endif; ?>
-                    <?php if($v_st):   ?><th><?php echo esc_html($L_st);   ?></th><?php endif; ?>
+                    <?php if($v_ext):   ?><th><?php echo esc_html($L_ext);   ?></th><?php endif; ?>
+                    <?php if($v_cell):  ?><th><?php echo esc_html($L_cell);  ?></th><?php endif; ?>
+                    <?php if($v_tot):   ?><th><?php echo esc_html($L_tot);   ?></th><?php endif; ?>
+                    <?php if($v_prnet): ?><th><?php echo esc_html($L_prnet); ?></th><?php endif; ?>
+                    <?php if($v_pr):    ?><th><?php echo esc_html($L_pr);    ?></th><?php endif; ?>
+                    <?php if($v_st):    ?><th><?php echo esc_html($L_st);    ?></th><?php endif; ?>
                 </tr></thead>
                 <tbody>
                     <?php for($i=1;$i<=3;$i++): ?>
@@ -351,9 +390,10 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
                         <td data-label="<?php echo esc_attr($L_int); ?>">5<?php echo (int)$i; ?> m²</td>
                         <?php if($v_ext):  ?><td data-label="<?php echo esc_attr($L_ext); ?>">8 m²</td><?php endif; ?>
                         <?php if($v_cell): ?><td data-label="<?php echo esc_attr($L_cell); ?>">Áno</td><?php endif; ?>
-                        <?php if($v_tot):  ?><td data-label="<?php echo esc_attr($L_tot); ?>">6<?php echo (int)$i; ?> m²</td><?php endif; ?>
-                        <?php if($v_pr):   ?><td data-label="<?php echo esc_attr($L_pr); ?>"><strong>199 000 €</strong></td><?php endif; ?>
-                        <?php if($v_st):   ?><td data-label="<?php echo esc_attr($L_st); ?>"><span class="dev-badge free">Voľný</span></td><?php endif; ?>
+                        <?php if($v_tot):   ?><td data-label="<?php echo esc_attr($L_tot); ?>">6<?php echo (int)$i; ?> m²</td><?php endif; ?>
+                        <?php if($v_prnet): ?><td data-label="<?php echo esc_attr($L_prnet); ?>"><strong>162 000 €</strong></td><?php endif; ?>
+                        <?php if($v_pr):    ?><td data-label="<?php echo esc_attr($L_pr); ?>"><strong>199 000 €</strong></td><?php endif; ?>
+                        <?php if($v_st):    ?><td data-label="<?php echo esc_attr($L_st); ?>"><span class="dev-badge free">Voľný</span></td><?php endif; ?>
                     </tr>
                     <?php endfor; ?>
                 </tbody>
@@ -378,6 +418,20 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
         return $url ?: '';
     }
 
+    /** Vráti pole URL obrázkov galérie (large) pre daný byt. Prázdne ak žiadna galéria. */
+    private function dev_get_gallery_urls($post_id){
+        $ids = get_post_meta($post_id, 'apt_gallery_ids', true);
+        if (!$ids || !is_string($ids)) return array();
+        $arr = array_filter(array_map('intval', explode(',', $ids)));
+        if (empty($arr)) return array();
+        $urls = array();
+        foreach ($arr as $aid) {
+            $u = wp_get_attachment_image_url($aid, 'large');
+            if ($u) $urls[] = $u;
+        }
+        return $urls;
+    }
+
     private function dev_format_price($post_id){
         $pres = get_post_meta($post_id,'apt_price_presale',true);
         $disc = get_post_meta($post_id,'apt_price_discount',true);
@@ -398,6 +452,51 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
         }
         if($list !== '' && is_numeric($list)){
             return number_format((float)$list,0,',',' ').' €';
+        }
+        return __('Na vyžiadanie','developer-apartments');
+    }
+
+    /**
+     * Cena bez DPH – rovnaká logika ako dev_format_price, ale delené sadzbou DPH.
+     * - Predpredaj -> len táto cena bez DPH
+     * - Zvýhodnená cena -> pôvodná bez DPH preškrtnutá + zvýhodnená bez DPH tučným
+     * - Len cenníková -> len cenníková bez DPH
+     * - Inak "Na vyžiadanie"
+     */
+    private function dev_format_price_net($post_id){
+        $pres = get_post_meta($post_id,'apt_price_presale',true);
+        $disc = get_post_meta($post_id,'apt_price_discount',true);
+        $list = get_post_meta($post_id,'apt_price_list',true);
+
+        $vat = function_exists('dev_apt_get_vat_rate') ? dev_apt_get_vat_rate() : 23.0;
+        if ($vat < 0)   $vat = 0;
+        if ($vat > 100) $vat = 100;
+        $factor = 1 + ($vat / 100.0);
+        if ($factor <= 0) $factor = 1.0;
+
+        $to_net = function($v) use ($factor){
+            return ($v !== '' && is_numeric($v)) ? ((float)$v / $factor) : null;
+        };
+
+        $pres_n = $to_net($pres);
+        $disc_n = $to_net($disc);
+        $list_n = $to_net($list);
+
+        if($pres_n !== null){
+            return '<strong>'.number_format($pres_n,0,',',' ').' €</strong>';
+        }
+        if($disc_n !== null){
+            $list_fmt = ($list_n !== null) ? number_format($list_n,0,',',' ').' €' : '';
+            $disc_fmt = number_format($disc_n,0,',',' ').' €';
+            $out = '';
+            if ($list_fmt !== '') {
+                $out .= '<span class="dev-price-old">'.$list_fmt.'</span> ';
+            }
+            $out .= '<strong class="dev-price-discount">'.$disc_fmt.'</strong>';
+            return $out;
+        }
+        if($list_n !== null){
+            return number_format($list_n,0,',',' ').' €';
         }
         return __('Na vyžiadanie','developer-apartments');
     }
@@ -448,20 +547,22 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
         }
 
         // Labels
-        $L_flat = $this->props['label_col_flat']; 
-        $L_int  = $this->props['label_col_int'];
-        $L_ext  = $this->props['label_col_ext'];   
-        $L_cell = $this->props['label_col_cellar'];
-        $L_tot  = $this->props['label_col_total']; 
-        $L_pr   = $this->props['label_col_price'];
-        $L_st   = $this->props['label_col_status'];
+        $L_flat  = $this->props['label_col_flat']; 
+        $L_int   = $this->props['label_col_int'];
+        $L_ext   = $this->props['label_col_ext'];   
+        $L_cell  = $this->props['label_col_cellar'];
+        $L_tot   = $this->props['label_col_total']; 
+        $L_pr    = $this->props['label_col_price'];
+        $L_st    = $this->props['label_col_status'];
+        $L_prnet = $this->props['label_col_price_net'];
 
         // Column visibility
-        $v_ext  = ($this->props['show_col_ext']==='on');
-        $v_cell = ($this->props['show_col_cellar']==='on');
-        $v_tot  = ($this->props['show_col_total']==='on');
-        $v_pr   = ($this->props['show_col_price']==='on');
-        $v_st   = ($this->props['show_col_status']==='on');
+        $v_ext   = ($this->props['show_col_ext']==='on');
+        $v_cell  = ($this->props['show_col_cellar']==='on');
+        $v_tot   = ($this->props['show_col_total']==='on');
+        $v_pr    = ($this->props['show_col_price']==='on');
+        $v_st    = ($this->props['show_col_status']==='on');
+        $v_prnet = ($this->props['show_col_price_net']==='on');
 
         // Behavior parameters
         $enable_sort    = ($this->props['enable_sort']==='on');
@@ -475,6 +576,9 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
         $F_search       = ($this->props['filter_search']==='on');
         $btn_csv        = ($this->props['export_csv']==='on');
         $hover_preview  = ($this->props['hover_image_preview']==='on');
+        $show_gallery_icon = ($this->props['show_gallery_icon']==='on');
+        $gallery_icon_url  = trim($this->props['gallery_icon_url'] ?? '');
+        if ($gallery_icon_url === '') $gallery_icon_url = 'https://www.rezidenciaprsianska.sk/wp-content/uploads/2026/03/galeria.svg';
 
         $uid = 'dev-table-'.uniqid();
 
@@ -536,6 +640,8 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
             data-f-search="<?php echo $F_search?'1':'0'; ?>"
             data-export-csv="<?php echo $btn_csv?'1':'0'; ?>"
             data-hover-preview="<?php echo $hover_preview?'1':'0'; ?>"
+            data-gallery-icon="<?php echo $show_gallery_icon?'1':'0'; ?>"
+            data-gallery-icon-url="<?php echo esc_attr($gallery_icon_url); ?>"
         >
 
         <?php if($enable_filters): ?>
@@ -618,6 +724,12 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
                         </th>
                     <?php endif; ?>
 
+                    <?php if($v_prnet): ?>
+                        <th data-key="price_net" <?php if($enable_sort) echo 'data-sortable="1"'; ?>>
+                            <?php echo esc_html($L_prnet); ?><span class="sort-ico"></span>
+                        </th>
+                    <?php endif; ?>
+
                     <?php if($v_pr): ?>
                         <th data-key="price" <?php if($enable_sort) echo 'data-sortable="1"'; ?>>
                             <?php echo esc_html($L_pr); ?><span class="sort-ico"></span>
@@ -647,7 +759,8 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
 
                 $cellar_yes = get_post_meta(get_the_ID(),'apt_cellar_yes',true);
 
-                $price_html = $this->dev_format_price(get_the_ID());
+                $price_html     = $this->dev_format_price(get_the_ID());
+                $price_net_html = $this->dev_format_price_net(get_the_ID());
 
                 $status_terms = get_the_terms(get_the_ID(),'apartment_status');
                 $status_name  = ($status_terms && !is_wp_error($status_terms)) ? $status_terms[0]->name : '';
@@ -677,9 +790,11 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
                     array('fields'=>'ids')
                 );
                 $img_url = $hover_preview ? $this->dev_get_row_image_url(get_the_ID()) : '';
+                $gallery_urls = $show_gallery_icon ? $this->dev_get_gallery_urls(get_the_ID()) : array();
             ?>
                 <tr data-href="<?php echo esc_url($permalink); ?>"
                     <?php if($img_url): ?>data-image-url="<?php echo esc_url($img_url); ?>"<?php endif; ?>
+                    <?php if($show_gallery_icon && !empty($gallery_urls)): ?>data-gallery-urls="<?php echo esc_attr(wp_json_encode($gallery_urls)); ?>"<?php endif; ?>
                     data-flat="<?php echo esc_attr(get_the_title()); ?>"
                     data-int="<?php echo esc_attr($i_area); ?>"
                     <?php if($v_ext): ?>
@@ -697,6 +812,10 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
                         data-price="<?php echo esc_attr(preg_replace('/\D+/','', strip_tags($price_html)) ?: 0); ?>"
                     <?php endif; ?>
 
+                    <?php if($v_prnet): ?>
+                        data-price_net="<?php echo esc_attr(preg_replace('/\D+/','', strip_tags($price_net_html)) ?: 0); ?>"
+                    <?php endif; ?>
+
                     data-status="<?php echo esc_attr($status_name); ?>"
                     data-terms="<?php echo esc_attr(implode(',', array_map('intval',$terms_ids ?: array()))); ?>"
                     data-type-ids="<?php echo esc_attr(implode(',', array_map('intval',$type_ids ?: array()))); ?>"
@@ -704,7 +823,12 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
                 >
 
                     <td data-label="<?php echo esc_attr($L_flat); ?>">
-                        <strong><?php the_title(); ?></strong>
+                        <span class="dev-table-title-cell">
+                            <strong><?php the_title(); ?></strong>
+                            <?php if ($show_gallery_icon && !empty($gallery_urls)): ?>
+                                <a href="javascript:void(0)" class="dev-table-gallery-icon" data-gallery-urls="<?php echo esc_attr(wp_json_encode($gallery_urls)); ?>" aria-label="<?php echo esc_attr__('Galéria','developer-apartments'); ?>" role="button"><img src="<?php echo esc_url($gallery_icon_url); ?>" width="20" height="20" alt="" role="presentation"></a>
+                            <?php endif; ?>
+                        </span>
                     </td>
 
                     <td data-label="<?php echo esc_attr($L_int); ?>">
@@ -729,6 +853,12 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
                         </td>
                     <?php endif; ?>
 
+                    <?php if($v_prnet): ?>
+                        <td data-label="<?php echo esc_attr($L_prnet); ?>">
+                            <?php echo $price_net_html; ?>
+                        </td>
+                    <?php endif; ?>
+
                     <?php if($v_pr): ?>
                         <td data-label="<?php echo esc_attr($L_pr); ?>">
                             <?php echo $price_html; ?>
@@ -748,6 +878,10 @@ class DEV_Table_Module_V2 extends ET_Builder_Module {
 
         <?php if($hover_preview): ?>
         <div class="dev-table-hover-preview" aria-hidden="true"></div>
+        <?php endif; ?>
+
+        <?php if($show_gallery_icon): ?>
+        <div class="dev-gallery-lightbox" id="dev-gallery-lb-<?php echo esc_attr($uid); ?>" aria-hidden="true" style="display:none;"></div>
         <?php endif; ?>
 
         <div class="dev-pagination" style="margin-top:10px;display:none;gap:6px"></div>

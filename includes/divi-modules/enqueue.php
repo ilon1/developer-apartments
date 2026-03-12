@@ -6,6 +6,7 @@ add_action('wp_enqueue_scripts', function(){
   wp_enqueue_style('dev-apt-table', DEV_APT_URL.'includes/divi-modules/assets/table.css', array(), DEV_APT_VERSION);
   wp_enqueue_style('dev-apt-sticky', DEV_APT_URL.'assets/css/dev-sticky-breadcrumbs.css', array('dev-apt-table'), DEV_APT_VERSION);
   wp_enqueue_style( 'dev-apt-bitform-divi', DEV_APT_URL . 'assets/css/bitform-divi.css', array(), DEV_APT_VERSION );
+  wp_enqueue_style( 'dev-apt-buttons-spacing', DEV_APT_URL . 'assets/css/buttons-spacing.css', array(), DEV_APT_VERSION );
 });
 add_action('admin_enqueue_scripts', function(){
   wp_enqueue_style('dev-apt-table', DEV_APT_URL.'includes/divi-modules/assets/table.css', array(), DEV_APT_VERSION);

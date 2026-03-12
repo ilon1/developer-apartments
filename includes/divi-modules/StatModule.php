@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 class DEV_Stat_Module extends ET_Builder_Module {
 
     public $slug       = 'dev_apartment_stat';
-    public $vb_support = 'on';
+    public $vb_support = 'partial';
 
     public function init(){
         $this->name = 'Údaje bytu';

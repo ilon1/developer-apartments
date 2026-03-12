@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 class DEV_Contact_Button_Module extends ET_Builder_Module {
 
     public $slug       = 'dev_contact_button';
-    public $vb_support = 'on';
+    public $vb_support = 'partial';
 
     public function init(){
         $this->name = 'Tlačidlo Mám záujem';

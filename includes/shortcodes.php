@@ -130,6 +130,52 @@ add_shortcode('dev_apt_featured_image', function($atts){
     return $img ? '<div class="dev-apt-featured-image">'.$img.'</div>' : '';
 });
 
+/**
+ * Cena bytu bez DPH – používa rovnakú logiku ako dev_apt_price,
+ * ale všetky ceny prepočíta na sumu bez DPH podľa nastaveného percenta.
+ *
+ * [dev_apt_price_ex_vat] alebo [dev_apt_price_ex_vat id=123]
+ */
+add_shortcode('dev_apt_price_ex_vat', function($atts){
+    $atts = shortcode_atts(array('id'=>0), $atts, 'dev_apt_price_ex_vat');
+    $pid = dev_resolve_apartment_id_from_atts($atts);
+    if(!$pid) return '';
+
+    $pres = get_post_meta($pid, 'apt_price_presale', true);
+    $disc = get_post_meta($pid, 'apt_price_discount', true);
+    $list = get_post_meta($pid, 'apt_price_list', true);
+
+    $vat = function_exists('dev_apt_get_vat_rate') ? dev_apt_get_vat_rate() : 23.0;
+    if ($vat < 0)   $vat = 0;
+    if ($vat > 100) $vat = 100;
+    $factor = 1 + ($vat / 100.0);
+    if ($factor <= 0) $factor = 1.0;
+
+    $to_net = function($v) use ($factor){
+        return ($v !== '' && is_numeric($v)) ? ((float)$v / $factor) : null;
+    };
+
+    $pres_n = $to_net($pres);
+    $disc_n = $to_net($disc);
+    $list_n = $to_net($list);
+
+    if($pres_n !== null){
+        return '<span class="dev-apt-price">'.number_format($pres_n, 0, ',', ' ').' €</span>';
+    }
+    if($disc_n !== null){
+        $list_fmt = ($list_n !== null) ? number_format($list_n, 0, ',', ' ').' €' : '';
+        $disc_fmt = number_format($disc_n, 0, ',', ' ').' €';
+        if ($list_fmt !== '') {
+            return '<span class="dev-apt-price-old" style="text-decoration:line-through;opacity:.7">'.$list_fmt.'</span> <strong class="dev-apt-price">'.$disc_fmt.'</strong>';
+        }
+        return '<strong class="dev-apt-price">'.$disc_fmt.'</strong>';
+    }
+    if($list_n !== null){
+        return '<span class="dev-apt-price">'.number_format($list_n, 0, ',', ' ').' €</span>';
+    }
+    return '<span class="dev-apt-price">'.__('Na vyžiadanie','developer-apartments').'</span>';
+});
+
 // Floorplan button: [dev_floorplan_button] or [dev_floorplan_button id=123]
 add_shortcode('dev_floorplan_button', function($atts){
     $atts = shortcode_atts(array('id'=>0,'label'=>''), $atts, 'dev_floorplan_button');

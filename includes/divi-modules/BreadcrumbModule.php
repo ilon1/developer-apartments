@@ -3,7 +3,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class DEV_Breadcrumb_Module extends ET_Builder_Module {
     public $slug       = 'dev_apt_breadcrumb';
-    public $vb_support = 'on';
+    public $vb_support = 'partial';
 
     public function init(){
         $this->name = 'Breadcrumb štruktúry';

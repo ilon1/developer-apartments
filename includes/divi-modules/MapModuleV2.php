@@ -5,7 +5,8 @@
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 class DEV_Map_Module_V2 extends ET_Builder_Module {
-  public $slug = 'dev_apartment_map_v2'; public $vb_support = 'on';
+  public $slug       = 'dev_apartment_map_v2';
+  public $vb_support = 'partial';
   public function init(){ $this->name = 'Mapa Bytov (v2)'; $this->folder_name = 'dev_apt_byty'; $this->settings_modal_toggles = array('general'=>array('toggles'=>array('source'=>array('title'=>'Zdroj'),'sizing'=>array('title'=>'Rozmery mapy'),'style'=>array('title'=>'Štýl'),'tooltip'=>array('title'=>'Tooltip'),'badge'=>array('title'=>'Obsadenosť'),'hover'=>array('title'=>'Hover efekty'),'behavior'=>array('title'=>'Správanie'),'perf'=>array('title'=>'Výkon / Cache'),)),); }
   public function get_fields(){ $terms = get_terms(array('taxonomy'=>'project_structure','hide_empty'=>false)); $opts = array('' => '— Vyberte —'); if(!is_wp_error($terms)) foreach($terms as $t){ $opts[$t->term_id] = $t->name; }
     return array(
